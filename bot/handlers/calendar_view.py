@@ -73,6 +73,13 @@ async def navigate_calendar(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data == "cal:today")
+async def calendar_today(callback: CallbackQuery):
+    today = date.today()
+    await _render_calendar(callback.message, today.year, today.month, edit=True)
+    await callback.answer()
+
+
 @router.callback_query(F.data == "cal:ignore")
 async def cal_ignore(callback: CallbackQuery):
     await callback.answer()
