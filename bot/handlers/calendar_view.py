@@ -171,6 +171,6 @@ async def _get_all_deferral_dates() -> set:
     all_deliveries = await get_deliveries(unpaid_only=True)
     dates = set()
     for d in all_deliveries:
-        end = calc_deferral_end(d["delivery_date"], d["deferral_days"], d.get("manual_end_date"))
+        end = calc_deferral_end(d["delivery_date"], d["deferral_days"], d["manual_end_date"])
         dates.add(end)
     return dates

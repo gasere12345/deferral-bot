@@ -226,7 +226,7 @@ async def _show_list(message: types.Message, supplier_id: int):
         lines = [f"📦 <b>{s['name']}</b> — поставки:"]
         for dv in deliveries:
             paid = "✅" if dv["paid"] else "⏳"
-            end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv.get("manual_end_date"))
+            end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
             lines.append(
                 f"\n{paid} <b>#{dv['id']}</b> от {dv['delivery_date']}\n"
                 f"   Сумма: {dv['amount']:,.0f} руб.\n"
