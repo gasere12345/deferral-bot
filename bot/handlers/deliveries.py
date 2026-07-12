@@ -2,6 +2,7 @@ import calendar
 from datetime import date, datetime
 
 from aiogram import Router, types, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
@@ -143,22 +144,25 @@ async def add_delivery_start(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
 
+async def _safe_edit_markup(callback: CallbackQuery, kb: InlineKeyboardMarkup):
+    try:
+        await callback.message.edit_reply_markup(reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            raise
+    await callback.answer()
+
+
 @router.callback_query(AddDelivery.date, F.data.startswith("dp:nav:"))
 async def date_picker_nav(callback: CallbackQuery, state: FSMContext):
     _, _, year, month = callback.data.split(":")
-    await callback.message.edit_reply_markup(
-        reply_markup=_date_picker_kb(int(year), int(month)),
-    )
-    await callback.answer()
+    await _safe_edit_markup(callback, _date_picker_kb(int(year), int(month)))
 
 
 @router.callback_query(AddDelivery.date, F.data == "dp:today")
 async def date_picker_today(callback: CallbackQuery, state: FSMContext):
     today = date.today()
-    await callback.message.edit_reply_markup(
-        reply_markup=_date_picker_kb(today.year, today.month),
-    )
-    await callback.answer()
+    await _safe_edit_markup(callback, _date_picker_kb(today.year, today.month))
 
 
 @router.callback_query(AddDelivery.date, F.data.startswith("dp:day:"))
