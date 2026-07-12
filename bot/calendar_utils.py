@@ -32,7 +32,9 @@ def next_working_day(d: date) -> date:
     return d
 
 
-def calc_deferral_end(delivery_date_str: str, deferral_days: int) -> str:
+def calc_deferral_end(delivery_date_str: str, deferral_days: int, manual_end_date: str = None) -> str:
+    if manual_end_date:
+        return manual_end_date
     d = datetime.strptime(delivery_date_str, "%Y-%m-%d").date()
     end_date = d + timedelta(days=deferral_days)
     if not is_working_day(end_date):

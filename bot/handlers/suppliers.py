@@ -34,6 +34,7 @@ def supplier_detail_keyboard(supplier_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить поставку", callback_data=f"delivery:add:{supplier_id}")],
         [InlineKeyboardButton(text="📦 Поставки", callback_data=f"delivery:list:{supplier_id}")],
+        [InlineKeyboardButton(text="📅 Перенести дату", callback_data=f"delivery:reschedule:{supplier_id}")],
         [InlineKeyboardButton(text="✏️ Изменить", callback_data=f"supplier:edit_menu:{supplier_id}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"supplier:delete:{supplier_id}")],
         [InlineKeyboardButton(text="🔙 К списку", callback_data="supplier:list")],

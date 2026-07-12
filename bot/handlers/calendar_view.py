@@ -86,6 +86,11 @@ async def calendar_today(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "cal:ignore")
+async def cal_ignore(callback: CallbackQuery):
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("cal:day:"))
 async def show_day_deliveries(callback: CallbackQuery):
     _, _, year, month, day = callback.data.split(":")
@@ -166,6 +171,6 @@ async def _get_all_deferral_dates() -> set:
     all_deliveries = await get_deliveries(unpaid_only=True)
     dates = set()
     for d in all_deliveries:
-        end = calc_deferral_end(d["delivery_date"], d["deferral_days"])
+        end = calc_deferral_end(d["delivery_date"], d["deferral_days"], d.get("manual_end_date"))
         dates.add(end)
     return dates

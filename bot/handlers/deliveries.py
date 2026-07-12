@@ -210,6 +210,11 @@ async def add_delivery_amount(message: types.Message, state: FSMContext):
     await message.answer(text, reply_markup=kb)
 
 
+@router.callback_query(F.data == "dp:ignore")
+async def dp_ignore(callback: CallbackQuery):
+    await callback.answer()
+
+
 # ─── LIST / PAY ──────────────────────────────────────────
 
 async def _show_list(message: types.Message, supplier_id: int):
@@ -221,7 +226,7 @@ async def _show_list(message: types.Message, supplier_id: int):
         lines = [f"📦 <b>{s['name']}</b> — поставки:"]
         for dv in deliveries:
             paid = "✅" if dv["paid"] else "⏳"
-            end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"])
+            end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv.get("manual_end_date"))
             lines.append(
                 f"\n{paid} <b>#{dv['id']}</b> от {dv['delivery_date']}\n"
                 f"   Сумма: {dv['amount']:,.0f} руб.\n"
@@ -279,6 +284,97 @@ async def pay_delivery_handler(callback: CallbackQuery):
         await today_payments(callback)
     elif context == "list":
         supplier_id = int(parts[4])
-        await _show_list(callback, supplier_id)
+        await _show_list(callback.message, supplier_id)
+    elif context == "reschedule":
+        supplier_id = int(parts[4])
+        await _show_reschedule_list(callback.message, supplier_id)
     else:
         await callback.message.edit_text("✅ Готово!")
+
+
+# ─── MANUAL RESCHEDULE ───────────────────────────────────
+
+class RescheduleDelivery(StatesGroup):
+    picking = State()
+    date = State()
+
+
+async def _show_reschedule_list(message: types.Message, supplier_id: int):
+    from bot.db import get_deliveries, get_supplier
+    s = await get_supplier(supplier_id)
+    deliveries = await get_deliveries(supplier_id=supplier_id, unpaid_only=True)
+    if not deliveries:
+        await message.edit_text(
+            f"У <b>{s['name']}</b> нет неоплаченных поставок для переноса.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")],
+            ]),
+        )
+        return
+    lines = [f"📅 <b>Перенос даты оплаты</b> — {s['name']}", "Выбери поставку:"]
+    buttons = []
+    for dv in deliveries:
+        end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv.get("manual_end_date"))
+        label = f"#{dv['id']} — {dv['amount']:,.0f} руб. (сейчас {end})"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"rs:pick:{dv['id']}:{supplier_id}")])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")])
+    await message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data.startswith("delivery:reschedule:"))
+async def reschedule_start(callback: CallbackQuery):
+    supplier_id = int(callback.data.split(":")[2])
+    await _show_reschedule_list(callback.message, supplier_id)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("rs:pick:"))
+async def reschedule_pick_delivery(callback: CallbackQuery, state: FSMContext):
+    _, _, delivery_id, supplier_id = callback.data.split(":")
+    await state.update_data(delivery_id=int(delivery_id), supplier_id=int(supplier_id))
+    await state.set_state(RescheduleDelivery.date)
+    today = date.today()
+    await callback.message.edit_text(
+        "📅 Выбери <b>новую дату</b> оплаты:",
+        reply_markup=_date_picker_kb(today.year, today.month),
+    )
+    await callback.answer()
+
+
+@router.callback_query(RescheduleDelivery.date, F.data.startswith("dp:nav:"))
+async def reschedule_date_nav(callback: CallbackQuery, state: FSMContext):
+    _, _, year, month = callback.data.split(":")
+    await callback.message.edit_reply_markup(
+        reply_markup=_date_picker_kb(int(year), int(month)),
+    )
+    await callback.answer()
+
+
+@router.callback_query(RescheduleDelivery.date, F.data == "dp:today")
+async def reschedule_date_today(callback: CallbackQuery, state: FSMContext):
+    today = date.today()
+    await callback.message.edit_reply_markup(
+        reply_markup=_date_picker_kb(today.year, today.month),
+    )
+    await callback.answer()
+
+
+@router.callback_query(RescheduleDelivery.date, F.data.startswith("dp:day:"))
+async def reschedule_date_pick(callback: CallbackQuery, state: FSMContext):
+    from bot.db import set_manual_end_date, get_delivery
+    _, _, year, month, day = callback.data.split(":")
+    new_date = f"{year}-{int(month):02d}-{int(day):02d}"
+    data = await state.get_data()
+    delivery_id = data["delivery_id"]
+    supplier_id = data["supplier_id"]
+    await set_manual_end_date(delivery_id, new_date)
+    await state.clear()
+    dv = await get_delivery(delivery_id)
+    await callback.message.edit_text(
+        f"✅ Дата оплаты поставки <b>#{delivery_id}</b> перенесена на <b>{new_date}</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 К поставщику", callback_data=f"supplier:view:{supplier_id}")],
+            [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")],
+        ]),
+    )
+    await callback.answer()

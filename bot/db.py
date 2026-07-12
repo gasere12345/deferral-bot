@@ -19,6 +19,7 @@ async def init():
                 delivery_date TEXT NOT NULL,
                 amount REAL,
                 paid INTEGER DEFAULT 0,
+                manual_end_date TEXT DEFAULT NULL,
                 FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
             )
         """)
@@ -85,7 +86,8 @@ async def get_deliveries(supplier_id: int = None, date_from: str = None, date_to
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         query = """
-            SELECT d.id, d.supplier_id, d.delivery_date, d.amount, d.paid, s.name AS supplier_name, s.deferral_days
+            SELECT d.id, d.supplier_id, d.delivery_date, d.amount, d.paid,
+                   d.manual_end_date, s.name AS supplier_name, s.deferral_days
             FROM deliveries d
             JOIN suppliers s ON d.supplier_id = s.id
             WHERE 1=1
@@ -112,7 +114,7 @@ async def get_delivery(delivery_id: int):
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """SELECT d.id, d.supplier_id, d.delivery_date, d.amount, d.paid,
-                      s.name AS supplier_name, s.deferral_days
+                      d.manual_end_date, s.name AS supplier_name, s.deferral_days
                FROM deliveries d
                JOIN suppliers s ON d.supplier_id = s.id
                WHERE d.id = ?""",
@@ -124,6 +126,18 @@ async def get_delivery(delivery_id: int):
 async def mark_paid(delivery_id: int):
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute("UPDATE deliveries SET paid = 1 WHERE id = ?", (delivery_id,))
+        await db.commit()
+
+
+async def set_manual_end_date(delivery_id: int, new_date: str):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("UPDATE deliveries SET manual_end_date = ? WHERE id = ?", (new_date, delivery_id))
+        await db.commit()
+
+
+async def clear_manual_end_date(delivery_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("UPDATE deliveries SET manual_end_date = NULL WHERE id = ?", (delivery_id,))
         await db.commit()
 
 
@@ -147,8 +161,7 @@ async def get_deliveries_for_date(target_date: str):
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """SELECT d.id, d.supplier_id, d.delivery_date, d.amount, d.paid,
-                      s.name AS supplier_name, s.deferral_days,
-                      s.deferral_days AS _days
+                      d.manual_end_date, s.name AS supplier_name, s.deferral_days
                FROM deliveries d
                JOIN suppliers s ON d.supplier_id = s.id
                WHERE d.paid = 0""",
@@ -158,7 +171,9 @@ async def get_deliveries_for_date(target_date: str):
     from bot.calendar_utils import calc_deferral_end
     result = []
     for row in rows:
-        deferral_end = calc_deferral_end(row["delivery_date"], row["deferral_days"])
+        deferral_end = calc_deferral_end(
+            row["delivery_date"], row["deferral_days"], row["manual_end_date"]
+        )
         if deferral_end == target_date:
             result.append(dict(row))
     return result
