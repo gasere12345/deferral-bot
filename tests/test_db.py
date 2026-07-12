@@ -219,7 +219,7 @@ class TestDeliveries:
         await add_supplier("Sup", 30)
         await add_delivery(1, "2026-07-01", 100.0)
 
-        deferral_end_date = "2026-07-31"
+        deferral_end_date = "2026-07-30"
         result = await get_deliveries_for_date(deferral_end_date)
         assert len(result) == 1
         assert result[0]["supplier_name"] == "Sup"

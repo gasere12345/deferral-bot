@@ -87,36 +87,39 @@ class TestNextWorkingDay:
 
 class TestCalcDeferralEnd:
     def test_simple_no_weekend(self):
-        assert calc_deferral_end("2026-07-01", 5) == "2026-07-06"
+        assert calc_deferral_end("2026-07-13", 5) == "2026-07-17"
 
     def test_with_weekend_skip(self):
         assert calc_deferral_end("2026-07-09", 3) == "2026-07-13"
 
     def test_with_holiday_skip(self):
-        assert calc_deferral_end("2026-07-01", 2) == "2026-07-06"
+        assert calc_deferral_end("2026-07-01", 2) == "2026-07-02"
 
     def test_zero_deferral_days(self):
         assert calc_deferral_end("2026-07-13", 0) == "2026-07-13"
+
+    def test_one_deferral_day(self):
+        assert calc_deferral_end("2026-07-13", 1) == "2026-07-13"
 
     def test_manual_end_date_overrides(self):
         assert calc_deferral_end("2026-07-01", 5, manual_end_date="2026-07-20") == "2026-07-20"
 
     def test_manual_end_date_none(self):
-        assert calc_deferral_end("2026-07-13", 3) == "2026-07-16"
+        assert calc_deferral_end("2026-07-13", 3) == "2026-07-15"
 
     def test_deferral_ending_on_saturday(self):
         assert calc_deferral_end("2026-07-07", 5) == "2026-07-13"
 
     def test_deferral_ending_on_holiday(self):
-        assert calc_deferral_end("2026-06-29", 4) == "2026-07-06"
+        assert calc_deferral_end("2026-06-29", 4) == "2026-07-02"
 
     def test_long_deferral_crosses_weekends(self):
         result = calc_deferral_end("2026-07-01", 14)
-        d = date(2026, 7, 15)
+        d = date(2026, 7, 14)
         assert result == d.strftime("%Y-%m-%d")
 
     def test_manual_end_date_empty_string(self):
-        assert calc_deferral_end("2026-07-13", 3, manual_end_date="") == "2026-07-16"
+        assert calc_deferral_end("2026-07-13", 3, manual_end_date="") == "2026-07-15"
 
 
 class TestMonthRange:

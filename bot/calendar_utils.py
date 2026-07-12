@@ -40,7 +40,7 @@ def calc_deferral_end(delivery_date_str: str, deferral_days: int, manual_end_dat
     if manual_end_date:
         return manual_end_date
     d = datetime.strptime(delivery_date_str, "%Y-%m-%d").date()
-    end_date = d + timedelta(days=deferral_days)
+    end_date = d + timedelta(days=max(0, deferral_days - 1))
     if not is_working_day(end_date):
         end_date = next_working_day(end_date)
     return end_date.strftime("%Y-%m-%d")
