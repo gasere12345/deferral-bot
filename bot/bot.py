@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 CHAT_ID_ENV = "NOTIFICATION_CHAT_ID"
 _scheduler = None
+_health_runner = None
 
 dp = Dispatcher()
 dp.include_router(common.router)
@@ -25,6 +26,7 @@ dp.include_router(calendar_view.router)
 
 
 async def health_check():
+    global _health_runner
     from aiohttp import web
     app = web.Application()
     app.router.add_get("/health", lambda r: web.Response(text="OK"))
@@ -32,14 +34,18 @@ async def health_check():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    _health_runner = runner
     logger.info(f"Health check server running on port {PORT}")
 
 
 async def shutdown_scheduler():
-    global _scheduler
+    global _scheduler, _health_runner
     if _scheduler:
         _scheduler.shutdown(wait=False)
         logger.info("Scheduler shut down")
+    if _health_runner:
+        await _health_runner.cleanup()
+        logger.info("Health check server shut down")
 
 
 async def main():
@@ -67,7 +73,10 @@ async def main():
     else:
         logger.info("NOTIFICATION_CHAT_ID not set — daily notifications disabled")
 
-    asyncio.create_task(health_check())
+    try:
+        asyncio.create_task(health_check())
+    except Exception as e:
+        logger.warning(f"Could not start health check server: {e}")
 
     logger.info("Bot started polling")
     await dp.start_polling(bot)

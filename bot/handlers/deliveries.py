@@ -72,9 +72,7 @@ async def deliveries_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:today")
-async def today_payments(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
+async def _show_today_payments(callback: CallbackQuery):
     today = date.today().strftime("%Y-%m-%d")
     deliveries = await get_deliveries_for_date(today)
     d = date.today()
@@ -107,6 +105,12 @@ async def today_payments(callback: CallbackQuery, state: FSMContext):
     buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await callback.message.edit_text(text, reply_markup=kb)
+
+
+@router.callback_query(F.data == "menu:today")
+async def today_payments(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await _show_today_payments(callback)
     await callback.answer()
 
 
@@ -186,7 +190,12 @@ async def add_delivery_amount(message: types.Message, state: FSMContext):
     data = await state.get_data()
     supplier_id = data["supplier_id"]
     delivery_date = data["delivery_date"]
-    delivery_id = await add_delivery(supplier_id, delivery_date, amount)
+    try:
+        delivery_id = await add_delivery(supplier_id, delivery_date, amount)
+    except Exception:
+        await message.answer("❌ Ошибка: поставщик больше не существует.")
+        await state.clear()
+        return
     await state.clear()
 
     s = await get_supplier(supplier_id)
@@ -277,7 +286,7 @@ async def pay_delivery_handler(callback: CallbackQuery):
     await callback.answer(f"✅ Поставка #{delivery_id} отмечена оплаченной!", show_alert=True)
 
     if context == "today":
-        await today_payments(callback)
+        await _show_today_payments(callback)
     elif context == "list":
         supplier_id = int(parts[4])
         await _show_list(callback.message, supplier_id)

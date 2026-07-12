@@ -1,5 +1,6 @@
 import aiosqlite
 from datetime import date
+from bot.calendar_utils import calc_deferral_end
 from bot.config import DATABASE_PATH
 
 
@@ -143,7 +144,7 @@ async def clear_manual_end_date(delivery_id: int):
 
 async def edit_delivery(delivery_id: int, delivery_date: str = None, amount: float = None):
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        if delivery_date:
+        if delivery_date is not None:
             await db.execute("UPDATE deliveries SET delivery_date = ? WHERE id = ?", (delivery_date, delivery_id))
         if amount is not None:
             await db.execute("UPDATE deliveries SET amount = ? WHERE id = ?", (amount, delivery_id))
@@ -167,8 +168,6 @@ async def get_deliveries_for_date(target_date: str):
                WHERE d.paid = 0""",
         )
         rows = await cursor.fetchall()
-
-    from bot.calendar_utils import calc_deferral_end
     result = []
     for row in rows:
         deferral_end = calc_deferral_end(

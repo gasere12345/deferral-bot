@@ -24,8 +24,7 @@ async def daily_check(bot: Bot, chat_id: int):
         )
     else:
         lines = [
-            f"☀️ <b>Доброе утро! Сегодня нужно оплатить:</b>",
-            f" ({d.day} {month_name(d.month)} {d.year}, {weekday})",
+            f"☀️ <b>Доброе утро! Сегодня нужно оплатить:</b> ({d.day} {month_name(d.month)} {d.year}, {weekday})",
             "",
         ]
         total = 0
