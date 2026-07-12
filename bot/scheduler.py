@@ -1,15 +1,13 @@
-from datetime import date, datetime
+import logging
+
+from datetime import date
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.db import get_deliveries_for_date
-from bot.calendar_utils import calc_deferral_end
+from bot.calendar_utils import month_name
 
-
-def _month_name(m: int) -> str:
-    names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-             "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-    return names[m]
+logger = logging.getLogger(__name__)
 
 
 async def daily_check(bot: Bot, chat_id: int):
@@ -21,13 +19,13 @@ async def daily_check(bot: Bot, chat_id: int):
     if not deliveries:
         text = (
             f"☀️ <b>Доброе утро!</b>\n"
-            f"На сегодня ({d.day} {_month_name(d.month)}, {weekday}) "
+            f"На сегодня ({d.day} {month_name(d.month)}, {weekday}) "
             f"платежей нет. Спокойный день!"
         )
     else:
         lines = [
             f"☀️ <b>Доброе утро! Сегодня нужно оплатить:</b>",
-            f" ({d.day} {_month_name(d.month)} {d.year}, {weekday})",
+            f" ({d.day} {month_name(d.month)} {d.year}, {weekday})",
             "",
         ]
         total = 0
@@ -41,8 +39,8 @@ async def daily_check(bot: Bot, chat_id: int):
 
     try:
         await bot.send_message(chat_id, text)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.exception("Failed to send daily notification: %s", e)
 
 
 def setup_scheduler(bot: Bot, chat_id: int) -> AsyncIOScheduler:

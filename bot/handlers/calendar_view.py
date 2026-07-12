@@ -1,29 +1,21 @@
 import calendar
-from datetime import datetime, date
+from datetime import date
 from aiogram import Router, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-from bot.db import get_deliveries_for_date, get_delivery, mark_paid
-from bot.calendar_utils import calc_deferral_end, is_working_day, month_range
+from bot.db import get_deliveries_for_date, get_deliveries, get_delivery, mark_paid
+from bot.calendar_utils import calc_deferral_end, is_working_day, month_name, MONTH_NAMES
 
 router = Router()
-
-
-def _month_name(year: int, month: int) -> str:
-    names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-             "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-    return names[month]
 
 
 def _build_calendar(year: int, month: int, highlight_dates: set = None):
     if highlight_dates is None:
         highlight_dates = set()
     cal = calendar.monthcalendar(year, month)
-    names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-             "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
     kb = []
-    kb.append([InlineKeyboardButton(text=f"{names[month]} {year}", callback_data="cal:ignore")])
+    kb.append([InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="cal:ignore")])
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     kb.append([InlineKeyboardButton(text=d, callback_data="cal:ignore") for d in weekdays])
 
@@ -99,7 +91,7 @@ async def show_day_deliveries(callback: CallbackQuery):
 
     d = date(int(year), int(month), int(day))
     weekday = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
-    header = f"📅 {d.day} {_month_name(d.year, d.month)} {d.year} ({weekday})"
+    header = f"📅 {d.day} {month_name(d.month)} {d.year} ({weekday})"
 
     if not deliveries:
         text = f"{header}\n\nНет платежей на этот день."
@@ -156,9 +148,7 @@ async def _render_calendar(message: types.Message, year: int, month: int, edit: 
             highlight.add(d)
 
     kb = _build_calendar(year, month, highlight)
-    names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-             "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-    header = f"📅 <b>{names[month]} {year}</b>\n💰 — есть платеж  • — выходной/праздник"
+    header = f"📅 <b>{MONTH_NAMES[month]} {year}</b>\n💰 — есть платеж  • — выходной/праздник"
 
     if edit:
         await message.edit_text(header, reply_markup=kb)
@@ -167,7 +157,6 @@ async def _render_calendar(message: types.Message, year: int, month: int, edit: 
 
 
 async def _get_all_deferral_dates() -> set:
-    from bot.db import get_deliveries
     all_deliveries = await get_deliveries(unpaid_only=True)
     dates = set()
     for d in all_deliveries:

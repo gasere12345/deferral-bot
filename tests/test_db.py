@@ -1,23 +1,16 @@
-import os
-import tempfile
-
 import pytest
-
-TMP_DB = tempfile.mktemp(suffix=".db")
 
 
 @pytest.fixture
-async def db():
+async def db(tmp_path):
+    db_path = str(tmp_path / "test.db")
     import bot.db as db_module
     import bot.config as cfg_module
 
-    cfg_module.DATABASE_PATH = TMP_DB
-    db_module.DATABASE_PATH = TMP_DB
+    cfg_module.DATABASE_PATH = db_path
+    db_module.DATABASE_PATH = db_path
 
     await db_module.init()
-    yield
-    if os.path.exists(TMP_DB):
-        os.remove(TMP_DB)
 
 
 class TestSuppliers:

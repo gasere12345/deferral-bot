@@ -10,9 +10,9 @@ from bot.db import (
     add_delivery, get_deliveries, get_delivery,
     mark_paid, edit_delivery, delete_delivery,
     get_all_suppliers, get_supplier,
-    get_deliveries_for_date,
+    get_deliveries_for_date, set_manual_end_date,
 )
-from bot.calendar_utils import calc_deferral_end
+from bot.calendar_utils import calc_deferral_end, month_name
 
 router = Router()
 
@@ -23,16 +23,10 @@ class AddDelivery(StatesGroup):
     amount = State()
 
 
-def _month_name(m: int) -> str:
-    names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-             "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-    return names[m]
-
-
 def _date_picker_kb(year: int, month: int):
     cal = calendar.monthcalendar(year, month)
     kb = []
-    kb.append([InlineKeyboardButton(text=f"{_month_name(month)} {year}", callback_data="dp:ignore")])
+    kb.append([InlineKeyboardButton(text=f"{month_name(month)} {year}", callback_data="dp:ignore")])
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     kb.append([InlineKeyboardButton(text=d, callback_data="dp:ignore") for d in weekdays])
     for week in cal:
@@ -66,7 +60,8 @@ def _date_picker_kb(year: int, month: int):
 
 
 @router.callback_query(F.data == "menu:deliveries")
-async def deliveries_menu(callback: CallbackQuery):
+async def deliveries_menu(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить поставку", callback_data="delivery:add:0")],
         [InlineKeyboardButton(text="📋 Поставки по поставщику", callback_data="delivery:list:0")],
@@ -78,12 +73,13 @@ async def deliveries_menu(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "menu:today")
-async def today_payments(callback: CallbackQuery):
+async def today_payments(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     today = date.today().strftime("%Y-%m-%d")
     deliveries = await get_deliveries_for_date(today)
     d = date.today()
     weekday = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
-    header = f"💰 <b>Сегодня к оплате</b> — {d.day} {_month_name(d.month)} {d.year} ({weekday})"
+    header = f"💰 <b>Сегодня к оплате</b> — {d.day} {month_name(d.month)} {d.year} ({weekday})"
     if not deliveries:
         text = f"{header}\n\n🎉 На сегодня платежей нет."
     else:
@@ -169,7 +165,7 @@ async def date_picker_day(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AddDelivery.amount)
     d = date(int(year), int(month), int(day))
     await callback.message.edit_text(
-        f"📅 Дата поставки: <b>{d.day} {_month_name(d.month)} {d.year}</b>\n\n"
+        f"📅 Дата поставки: <b>{d.day} {month_name(d.month)} {d.year}</b>\n\n"
         f"💰 Введите <b>сумму поставки</b> (в рублях):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:deliveries")],
@@ -199,7 +195,7 @@ async def add_delivery_amount(message: types.Message, state: FSMContext):
     text = (
         f"✅ <b>Поставка добавлена!</b>\n\n"
         f"Поставщик: {s['name']}\n"
-        f"Дата поставки: {d.day} {_month_name(d.month)} {d.year}\n"
+        f"Дата поставки: {d.day} {month_name(d.month)} {d.year}\n"
         f"Сумма: {amount:,.0f} руб.\n"
         f"⏳ Последний день оплаты: <b>{deferral_end}</b>"
     )
@@ -300,7 +296,6 @@ class RescheduleDelivery(StatesGroup):
 
 
 async def _show_reschedule_list(message: types.Message, supplier_id: int):
-    from bot.db import get_deliveries, get_supplier
     s = await get_supplier(supplier_id)
     deliveries = await get_deliveries(supplier_id=supplier_id, unpaid_only=True)
     if not deliveries:
@@ -361,7 +356,6 @@ async def reschedule_date_today(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(RescheduleDelivery.date, F.data.startswith("dp:day:"))
 async def reschedule_date_pick(callback: CallbackQuery, state: FSMContext):
-    from bot.db import set_manual_end_date, get_delivery
     _, _, year, month, day = callback.data.split(":")
     new_date = f"{year}-{int(month):02d}-{int(day):02d}"
     data = await state.get_data()

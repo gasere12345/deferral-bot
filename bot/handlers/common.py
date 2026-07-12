@@ -1,5 +1,6 @@
 from aiogram import Router, types
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 router = Router()
@@ -24,8 +25,15 @@ async def cmd_start(message: types.Message):
     )
 
 
+@router.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Отменено.", reply_markup=main_menu())
+
+
 @router.callback_query(lambda c: c.data == "menu:main")
-async def back_to_main(callback: types.CallbackQuery):
+async def back_to_main(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
     await callback.message.edit_text(
         "👋 Главное меню. Выбирай:",
         reply_markup=main_menu(),

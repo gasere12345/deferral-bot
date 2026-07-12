@@ -1,15 +1,19 @@
+import calendar
 import json
 import os
 from datetime import date, timedelta, datetime
 
 
 HOLIDAYS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "holidays_rb.json")
+_HOLIDAYS_CACHE: dict[int, set] = {}
 
 
 def _load_holidays(year: int) -> set:
-    with open(HOLIDAYS_FILE) as f:
-        data = json.load(f)
-    return set(data.get(str(year), []))
+    if year not in _HOLIDAYS_CACHE:
+        with open(HOLIDAYS_FILE) as f:
+            data = json.load(f)
+        _HOLIDAYS_CACHE[year] = set(data.get(str(year), []))
+    return _HOLIDAYS_CACHE[year]
 
 
 def is_weekend(d: date) -> bool:
@@ -42,12 +46,18 @@ def calc_deferral_end(delivery_date_str: str, deferral_days: int, manual_end_dat
     return end_date.strftime("%Y-%m-%d")
 
 
+MONTH_NAMES = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
+
+def month_name(m: int) -> str:
+    return MONTH_NAMES[m] if 1 <= m <= 12 else ""
+
+
 def get_month_days(year: int, month: int) -> list:
-    import calendar
     return calendar.monthcalendar(year, month)
 
 
 def month_range(year: int, month: int):
-    import calendar
     _, days_in_month = calendar.monthrange(year, month)
     return days_in_month

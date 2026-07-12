@@ -42,7 +42,8 @@ def supplier_detail_keyboard(supplier_id: int):
 
 
 @router.callback_query(F.data == "menu:suppliers")
-async def show_suppliers_menu(callback: CallbackQuery):
+async def show_suppliers_menu(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     suppliers = await get_all_suppliers()
     if not suppliers:
         text = "📋 <b>Поставщики</b>\n\nПока нет ни одного поставщика. Нажми «➕ Добавить»."
@@ -58,7 +59,8 @@ async def show_suppliers_menu(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "supplier:list")
-async def show_suppliers_list(callback: CallbackQuery):
+async def show_suppliers_list(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     suppliers = await get_all_suppliers()
     text = "📋 <b>Поставщики</b> — выбери из списка:"
     await callback.message.edit_text(text, reply_markup=suppliers_list_keyboard(suppliers))
@@ -173,6 +175,9 @@ async def edit_supplier_value(message: types.Message, state: FSMContext):
     supplier_id = data["supplier_id"]
     field = data["field"]
     value = message.text.strip()
+    if field == "name" and not value:
+        await message.answer("Название не может быть пустым. Введите ещё раз:")
+        return
     if field == "deferral_days":
         try:
             value = int(value)

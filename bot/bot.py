@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 CHAT_ID_ENV = "NOTIFICATION_CHAT_ID"
+_scheduler = None
 
 dp = Dispatcher()
 dp.include_router(common.router)
@@ -34,7 +35,16 @@ async def health_check():
     logger.info(f"Health check server running on port {PORT}")
 
 
+async def shutdown_scheduler():
+    global _scheduler
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+        logger.info("Scheduler shut down")
+
+
 async def main():
+    global _scheduler
+
     if not TELEGRAM_TOKEN:
         logger.error("TELEGRAM_TOKEN not set!")
         return
@@ -44,13 +54,15 @@ async def main():
 
     bot = Bot(token=TELEGRAM_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
+    dp.shutdown.register(shutdown_scheduler)
+
     chat_id = os.getenv(CHAT_ID_ENV)
     if chat_id:
         try:
-            scheduler = setup_scheduler(bot, int(chat_id))
-            scheduler.start()
+            _scheduler = setup_scheduler(bot, int(chat_id))
+            _scheduler.start()
             logger.info(f"Daily notifications scheduled for chat {chat_id}")
-        except (ValueError, Exception) as e:
+        except Exception as e:
             logger.warning(f"Could not start scheduler: {e}")
     else:
         logger.info("NOTIFICATION_CHAT_ID not set — daily notifications disabled")

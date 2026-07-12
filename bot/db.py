@@ -58,9 +58,9 @@ async def get_supplier(supplier_id: int):
 
 async def edit_supplier(supplier_id: int, name: str = None, deferral_days: int = None):
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        if name:
+        if name is not None:
             await db.execute("UPDATE suppliers SET name = ? WHERE id = ?", (name, supplier_id))
-        if deferral_days:
+        if deferral_days is not None:
             await db.execute("UPDATE suppliers SET deferral_days = ? WHERE id = ?", (deferral_days, supplier_id))
         await db.commit()
 

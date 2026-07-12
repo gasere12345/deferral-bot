@@ -1,10 +1,4 @@
-import json
-import os
-import tempfile
-from datetime import date, timedelta
-from unittest.mock import patch
-
-import pytest
+from datetime import date
 
 from bot.calendar_utils import (
     is_weekend,
