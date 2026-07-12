@@ -1,6 +1,7 @@
 import calendar
 from datetime import date
 from aiogram import Router, types, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from bot.db import get_deliveries_for_date, get_deliveries, get_delivery, mark_paid
@@ -151,7 +152,11 @@ async def _render_calendar(message: types.Message, year: int, month: int, edit: 
     header = f"📅 <b>{MONTH_NAMES[month]} {year}</b>\n💰 — есть платеж  • — выходной/праздник"
 
     if edit:
-        await message.edit_text(header, reply_markup=kb)
+        try:
+            await message.edit_text(header, reply_markup=kb)
+        except TelegramBadRequest as e:
+            if "message is not modified" not in str(e):
+                raise
     else:
         await message.answer(header, reply_markup=kb)
 
