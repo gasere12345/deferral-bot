@@ -4,6 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from bot.db import add_supplier, get_all_suppliers, get_supplier, edit_supplier, delete_supplier, get_deliveries
+from bot.reports import esc
 
 router = Router()
 
@@ -88,7 +89,7 @@ async def add_supplier_name(message: types.Message, state: FSMContext):
     await state.update_data(name=name)
     await state.set_state(AddSupplier.days)
     await message.answer(
-        f"⏳ Сколько дней отсрочки у <b>{name}</b>? (число)",
+        f"⏳ Сколько дней отсрочки у <b>{esc(name)}</b>? (число)",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data="menu:suppliers")],
         ]),
@@ -109,9 +110,9 @@ async def add_supplier_days(message: types.Message, state: FSMContext):
     ok = await add_supplier(name, days)
     await state.clear()
     if ok:
-        text = f"✅ Поставщик <b>{name}</b> добавлен (отсрочка {days} дн.)"
+        text = f"✅ Поставщик <b>{esc(name)}</b> добавлен (отсрочка {days} дн.)"
     else:
-        text = f"⚠️ Поставщик <b>{name}</b> уже существует!"
+        text = f"⚠️ Поставщик <b>{esc(name)}</b> уже существует!"
     suppliers = await get_all_suppliers()
     await message.answer(text, reply_markup=suppliers_list_keyboard(suppliers))
 
@@ -127,7 +128,7 @@ async def view_supplier(callback: CallbackQuery):
     total = len(deliveries)
     unpaid = sum(1 for d in deliveries if not d["paid"])
     text = (
-        f"📋 <b>{s['name']}</b>\n"
+        f"📋 <b>{esc(s['name'])}</b>\n"
         f"⏳ Отсрочка: {s['deferral_days']} дн.\n"
         f"📦 Поставок: {total} | Не оплачено: {unpaid}"
     )
@@ -139,13 +140,16 @@ async def view_supplier(callback: CallbackQuery):
 async def edit_supplier_menu(callback: CallbackQuery):
     supplier_id = int(callback.data.split(":")[2])
     s = await get_supplier(supplier_id)
+    if s is None:
+        await callback.answer("Поставщик не найден", show_alert=True)
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Название", callback_data=f"supplier:edit_name:{supplier_id}")],
         [InlineKeyboardButton(text="✏️ Дни отсрочки", callback_data=f"supplier:edit_days:{supplier_id}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")],
     ])
     await callback.message.edit_text(
-        f"✏️ <b>Редактирование</b> «{s['name']}»\nЧто меняем?",
+        f"✏️ <b>Редактирование</b> «{esc(s['name'])}»\nЧто меняем?",
         reply_markup=kb,
     )
     await callback.answer()
@@ -174,6 +178,9 @@ async def edit_supplier_value(message: types.Message, state: FSMContext):
     data = await state.get_data()
     supplier_id = data["supplier_id"]
     field = data["field"]
+    if not message.text:
+        await message.answer("Введите текстовое значение:")
+        return
     value = message.text.strip()
     if field == "name" and not value:
         await message.answer("Название не может быть пустым. Введите ещё раз:")
@@ -186,7 +193,11 @@ async def edit_supplier_value(message: types.Message, state: FSMContext):
         except ValueError:
             await message.answer("Введите целое положительное число:")
             return
-    await edit_supplier(supplier_id, **{field: value})
+    try:
+        await edit_supplier(supplier_id, **{field: value})
+    except Exception:
+        await message.answer("⚠️ Поставщик с таким названием уже существует!")
+        return
     await state.clear()
     s = await get_supplier(supplier_id)
     await message.answer(
@@ -199,12 +210,15 @@ async def edit_supplier_value(message: types.Message, state: FSMContext):
 async def delete_supplier_confirm(callback: CallbackQuery):
     supplier_id = int(callback.data.split(":")[2])
     s = await get_supplier(supplier_id)
+    if s is None:
+        await callback.answer("Поставщик не найден", show_alert=True)
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"supplier:delete_yes:{supplier_id}")],
         [InlineKeyboardButton(text="❌ Нет", callback_data=f"supplier:view:{supplier_id}")],
     ])
     await callback.message.edit_text(
-        f"🗑 Удалить <b>{s['name']}</b>?\nВсе поставки этого поставщика тоже будут удалены.",
+        f"🗑 Удалить <b>{esc(s['name'])}</b>?\nВсе поставки этого поставщика тоже будут удалены.",
         reply_markup=kb,
     )
     await callback.answer()
@@ -214,6 +228,9 @@ async def delete_supplier_confirm(callback: CallbackQuery):
 async def delete_supplier_execute(callback: CallbackQuery, state: FSMContext):
     supplier_id = int(callback.data.split(":")[2])
     s = await get_supplier(supplier_id)
+    if s is None:
+        await callback.answer("Поставщик не найден", show_alert=True)
+        return
     name = s["name"]
     await delete_supplier(supplier_id)
     await callback.answer(f"🗑 «{name}» удалён", show_alert=True)

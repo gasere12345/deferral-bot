@@ -1,10 +1,27 @@
 import csv
 import io
 from datetime import date
+from html import escape
 
 from bot.calendar_utils import month_name
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+
+def esc(value) -> str:
+    return escape(str(value or ""), quote=False)
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    n = abs(n) % 100
+    if 11 <= n <= 14:
+        return many
+    last = n % 10
+    if last == 1:
+        return one
+    if last in (2, 3, 4):
+        return few
+    return many
 
 
 def _money(amount) -> str:
@@ -19,7 +36,7 @@ def _end_short(end: str) -> str:
 
 
 def format_payment_line(dv, with_date: bool = True) -> str:
-    line = f"• <b>{dv['supplier_name']}</b> — {_money(dv['amount'])}"
+    line = f"• <b>{esc(dv['supplier_name'])}</b> — {_money(dv['amount'])}"
     if with_date and dv.get("deferral_end"):
         line += f" (до {_end_short(dv['deferral_end'])})"
     return line
@@ -27,8 +44,8 @@ def format_payment_line(dv, with_date: bool = True) -> str:
 
 def format_overdue_line(dv, today: str) -> str:
     days = (date.fromisoformat(today) - date.fromisoformat(dv["deferral_end"])).days
-    overdue = "день" if days == 1 else ("дня" if days in (2, 3, 4) else "дней")
-    return f"🔴 <b>{dv['supplier_name']}</b> — {_money(dv['amount'])} (просрочено {days} {overdue})"
+    overdue = _plural(days, "день", "дня", "дней")
+    return f"🔴 <b>{esc(dv['supplier_name'])}</b> — {_money(dv['amount'])} (просрочено {days} {overdue})"
 
 
 def build_daily_text(deliveries, overdue, upcoming, remind_days: int, today: date) -> str:
@@ -106,6 +123,13 @@ def build_overdue_text(overdue, today: date) -> str:
     return "\n".join(lines)
 
 
+def _csv_safe(value) -> str:
+    s = str(value or "")
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def build_export_csv(deliveries) -> bytes:
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
@@ -113,7 +137,7 @@ def build_export_csv(deliveries) -> bytes:
     for dv in deliveries:
         writer.writerow([
             dv["id"],
-            dv["supplier_name"],
+            _csv_safe(dv["supplier_name"]),
             dv["delivery_date"],
             dv["amount"] or "",
             "да" if dv["paid"] else "нет",

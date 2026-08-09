@@ -6,6 +6,7 @@ from bot.reports import (
     build_overdue_text,
     build_export_csv,
     format_overdue_line,
+    esc,
 )
 
 
@@ -101,3 +102,15 @@ class TestExportCsv:
         assert "нет" in text
         assert "да" in text
         assert "1500.0" in text
+
+    def test_csv_formula_injection_guarded(self):
+        deliveries = [_dv(1, "=SUM(A1)", 100.0, "2026-07-15")]
+        data = build_export_csv(deliveries)
+        text = data.decode("utf-8-sig")
+        assert "'=SUM(A1)" in text
+        assert "1;=SUM" not in text
+
+    def test_esc_escapes_html(self):
+        assert esc('ООО "Рога & Копыта"') == 'ООО "Рога &amp; Копыта"'
+        assert esc("<b>x</b>") == "&lt;b&gt;x&lt;/b&gt;"
+        assert esc("простой") == "простой"

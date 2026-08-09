@@ -29,15 +29,18 @@ dp.include_router(calendar_view.router)
 
 async def health_check():
     global _health_runner
-    from aiohttp import web
-    app = web.Application()
-    app.router.add_get("/health", lambda r: web.Response(text="OK"))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    _health_runner = runner
-    logger.info(f"Health check server running on port {PORT}")
+    try:
+        from aiohttp import web
+        app = web.Application()
+        app.router.add_get("/health", lambda r: web.Response(text="OK"))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        await site.start()
+        _health_runner = runner
+        logger.info(f"Health check server running on port {PORT}")
+    except Exception as e:
+        logger.exception("Health check server failed to start: %s", e)
 
 
 async def shutdown_scheduler():
@@ -81,7 +84,7 @@ async def main():
         logger.warning(f"Could not start health check server: {e}")
 
     logger.info("Bot started polling")
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, drop_pending_updates=True)
 
 
 if __name__ == "__main__":

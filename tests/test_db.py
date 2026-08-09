@@ -299,3 +299,18 @@ class TestDeliveries:
         all_dv = await get_all_deliveries_with_end()
         assert len(all_dv) == 2
         assert all("deferral_end" in d for d in all_dv)
+
+    async def test_fk_enforced(self, db):
+        from bot.db import add_delivery
+        import pytest as _pytest
+
+        with _pytest.raises(Exception):
+            await add_delivery(999, "2026-07-01", 100.0)
+
+    async def test_reschedule_row_manual_end_access(self, db):
+        from bot.db import add_supplier, add_delivery, get_deliveries
+
+        await add_supplier("Sup", 5)
+        await add_delivery(1, "2026-07-06", 200.0)
+        rows = await get_deliveries(supplier_id=1, unpaid_only=True)
+        assert rows[0]["manual_end_date"] is None

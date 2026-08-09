@@ -2,6 +2,13 @@ import calendar
 import json
 import os
 from datetime import date, timedelta, datetime
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Europe/Minsk")
+
+
+def today_minsk() -> date:
+    return datetime.now(TZ).date()
 
 
 HOLIDAYS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "holidays_rb.json")

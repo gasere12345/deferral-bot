@@ -14,8 +14,8 @@ from bot.db import (
     get_deliveries_for_date, set_manual_end_date,
     get_all_deliveries_with_end,
 )
-from bot.calendar_utils import calc_deferral_end, month_name
-from bot.reports import build_export_csv
+from bot.calendar_utils import calc_deferral_end, month_name, today_minsk
+from bot.reports import build_export_csv, esc
 from bot.handlers.calendar_view import render_overdue_view
 
 router = Router()
@@ -77,9 +77,9 @@ async def deliveries_menu(callback: CallbackQuery, state: FSMContext):
 
 
 async def _show_today_payments(callback: CallbackQuery):
-    today = date.today().strftime("%Y-%m-%d")
+    today = today_minsk().strftime("%Y-%m-%d")
     deliveries = await get_deliveries_for_date(today)
-    d = date.today()
+    d = today_minsk()
     weekday = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
     header = f"💰 <b>Сегодня к оплате</b> — {d.day} {month_name(d.month)} {d.year} ({weekday})"
     if not deliveries:
@@ -90,7 +90,7 @@ async def _show_today_payments(callback: CallbackQuery):
         for dv in deliveries:
             total += dv["amount"] or 0
             lines.append(
-                f"• <b>{dv['supplier_name']}</b> — {dv['amount']:,.0f} руб.\n"
+                f"• <b>{esc(dv['supplier_name'])}</b> — {dv['amount']:,.0f} руб.\n"
                 f"  (поставка {dv['delivery_date']})"
             )
         lines.append(f"\n💰 Итого к оплате: {total:,.0f} руб.")
@@ -101,7 +101,7 @@ async def _show_today_payments(callback: CallbackQuery):
         if not dv["paid"]:
             buttons.append([
                 InlineKeyboardButton(
-                    text=f"✅ Оплатить #{dv['id']} — {dv['supplier_name']}",
+                    text=f"✅ Оплатить #{dv['id']} — {esc(dv['supplier_name'])}",
                     callback_data=f"delivery:pay:{dv['id']}:today",
                 )
             ])
@@ -139,7 +139,7 @@ async def add_delivery_start(callback: CallbackQuery, state: FSMContext):
     else:
         await state.update_data(supplier_id=supplier_id)
         await state.set_state(AddDelivery.date)
-        today = date.today()
+        today = today_minsk()
         await callback.message.edit_text(
             "📅 Выберите <b>дату поставки</b>:",
             reply_markup=_date_picker_kb(today.year, today.month),
@@ -164,7 +164,7 @@ async def date_picker_nav(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(AddDelivery.date, F.data == "dp:today")
 async def date_picker_today(callback: CallbackQuery, state: FSMContext):
-    today = date.today()
+    today = today_minsk()
     await _safe_edit_markup(callback, _date_picker_kb(today.year, today.month))
 
 
@@ -187,6 +187,9 @@ async def date_picker_day(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AddDelivery.amount)
 async def add_delivery_amount(message: types.Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Введите число (сумма в рублях):")
+        return
     try:
         amount = float(message.text.strip().replace(",", "."))
         if amount <= 0:
@@ -206,11 +209,14 @@ async def add_delivery_amount(message: types.Message, state: FSMContext):
     await state.clear()
 
     s = await get_supplier(supplier_id)
+    if s is None:
+        await message.answer("❌ Поставщик больше не существует.")
+        return
     deferral_end = calc_deferral_end(delivery_date, s["deferral_days"])
     d = datetime.strptime(delivery_date, "%Y-%m-%d").date()
     text = (
         f"✅ <b>Поставка добавлена!</b>\n\n"
-        f"Поставщик: {s['name']}\n"
+        f"Поставщик: {esc(s['name'])}\n"
         f"Дата поставки: {d.day} {month_name(d.month)} {d.year}\n"
         f"Сумма: {amount:,.0f} руб.\n"
         f"⏳ Последний день оплаты: <b>{deferral_end}</b>"
@@ -229,13 +235,16 @@ async def dp_ignore(callback: CallbackQuery):
 
 # ─── LIST / PAY ──────────────────────────────────────────
 
-async def _show_list(message: types.Message, supplier_id: int):
+async def _show_list(message: types.Message, supplier_id: int, edit: bool = True):
     s = await get_supplier(supplier_id)
+    if s is None:
+        await message.answer("❌ Поставщик не найден.")
+        return
     deliveries = await get_deliveries(supplier_id=supplier_id)
     if not deliveries:
-        text = f"📦 У <b>{s['name']}</b> пока нет поставок."
+        text = f"📦 У <b>{esc(s['name'])}</b> пока нет поставок."
     else:
-        lines = [f"📦 <b>{s['name']}</b> — поставки:"]
+        lines = [f"📦 <b>{esc(s['name'])}</b> — поставки:"]
         for dv in deliveries:
             paid = "✅" if dv["paid"] else "⏳"
             end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
@@ -267,7 +276,10 @@ async def _show_list(message: types.Message, supplier_id: int):
     buttons.append([InlineKeyboardButton(text="🔙 К поставщику", callback_data=f"supplier:view:{supplier_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.edit_text(text, reply_markup=kb)
+    if edit:
+        await message.edit_text(text, reply_markup=kb)
+    else:
+        await message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("delivery:list:"))
@@ -323,19 +335,22 @@ class RescheduleDelivery(StatesGroup):
 
 async def _show_reschedule_list(message: types.Message, supplier_id: int):
     s = await get_supplier(supplier_id)
+    if s is None:
+        await message.edit_text("❌ Поставщик не найден.")
+        return
     deliveries = await get_deliveries(supplier_id=supplier_id, unpaid_only=True)
     if not deliveries:
         await message.edit_text(
-            f"У <b>{s['name']}</b> нет неоплаченных поставок для переноса.",
+            f"У <b>{esc(s['name'])}</b> нет неоплаченных поставок для переноса.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")],
             ]),
         )
         return
-    lines = [f"📅 <b>Перенос даты оплаты</b> — {s['name']}", "Выбери поставку:"]
+    lines = [f"📅 <b>Перенос даты оплаты</b> — {esc(s['name'])}", "Выбери поставку:"]
     buttons = []
     for dv in deliveries:
-        end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv.get("manual_end_date"))
+        end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
         label = f"#{dv['id']} — {dv['amount']:,.0f} руб. (сейчас {end})"
         buttons.append([InlineKeyboardButton(text=label, callback_data=f"rs:pick:{dv['id']}:{supplier_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")])
@@ -354,7 +369,7 @@ async def reschedule_pick_delivery(callback: CallbackQuery, state: FSMContext):
     _, _, delivery_id, supplier_id = callback.data.split(":")
     await state.update_data(delivery_id=int(delivery_id), supplier_id=int(supplier_id))
     await state.set_state(RescheduleDelivery.date)
-    today = date.today()
+    today = today_minsk()
     await callback.message.edit_text(
         "📅 Выбери <b>новую дату</b> оплаты:",
         reply_markup=_date_picker_kb(today.year, today.month),
@@ -365,19 +380,13 @@ async def reschedule_pick_delivery(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(RescheduleDelivery.date, F.data.startswith("dp:nav:"))
 async def reschedule_date_nav(callback: CallbackQuery, state: FSMContext):
     _, _, year, month = callback.data.split(":")
-    await callback.message.edit_reply_markup(
-        reply_markup=_date_picker_kb(int(year), int(month)),
-    )
-    await callback.answer()
+    await _safe_edit_markup(callback, _date_picker_kb(int(year), int(month)))
 
 
 @router.callback_query(RescheduleDelivery.date, F.data == "dp:today")
 async def reschedule_date_today(callback: CallbackQuery, state: FSMContext):
-    today = date.today()
-    await callback.message.edit_reply_markup(
-        reply_markup=_date_picker_kb(today.year, today.month),
-    )
-    await callback.answer()
+    today = today_minsk()
+    await _safe_edit_markup(callback, _date_picker_kb(today.year, today.month))
 
 
 @router.callback_query(RescheduleDelivery.date, F.data.startswith("dp:day:"))
@@ -409,13 +418,17 @@ class EditDeliveryAmount(StatesGroup):
 @router.callback_query(F.data.startswith("delivery:edit_amount:"))
 async def edit_delivery_amount_start(callback: CallbackQuery, state: FSMContext):
     _, _, delivery_id, supplier_id = callback.data.split(":")
+    dv = await get_delivery(int(delivery_id))
+    if dv is None:
+        await callback.answer("Поставка не найдена", show_alert=True)
+        await _show_list(callback.message, int(supplier_id))
+        return
     await state.update_data(delivery_id=int(delivery_id), supplier_id=int(supplier_id))
     await state.set_state(EditDeliveryAmount.amount)
-    dv = await get_delivery(int(delivery_id))
     await callback.message.edit_text(
         f"💰 Текущая сумма: {dv['amount']:,.0f} руб.\nВведите <b>новую сумму</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Отмена", callback_data=f"delivery:list:{supplier_id}")],
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data=f"menu:deliveries")],
         ]),
     )
     await callback.answer()
@@ -423,6 +436,9 @@ async def edit_delivery_amount_start(callback: CallbackQuery, state: FSMContext)
 
 @router.message(EditDeliveryAmount.amount)
 async def edit_delivery_amount_save(message: types.Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Введите число (сумма в рублях):")
+        return
     try:
         amount = float(message.text.strip().replace(",", "."))
         if amount <= 0:
@@ -433,19 +449,24 @@ async def edit_delivery_amount_save(message: types.Message, state: FSMContext):
     data = await state.get_data()
     await edit_delivery(data["delivery_id"], amount=amount)
     await state.clear()
-    await _show_list(message, data["supplier_id"])
+    await message.answer("✅ Сумма обновлена.")
+    await _show_list(message, data["supplier_id"], edit=False)
 
 
 @router.callback_query(F.data.startswith("delivery:del:"))
 async def delete_delivery_confirm(callback: CallbackQuery):
     _, _, delivery_id, supplier_id = callback.data.split(":")
     dv = await get_delivery(int(delivery_id))
+    if dv is None:
+        await callback.answer("Поставка не найдена", show_alert=True)
+        await _show_list(callback.message, int(supplier_id))
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"delivery:del_yes:{delivery_id}:{supplier_id}")],
         [InlineKeyboardButton(text="❌ Нет", callback_data=f"delivery:list:{supplier_id}")],
     ])
     await callback.message.edit_text(
-        f"🗑 Удалить поставку <b>#{delivery_id}</b> ({dv['supplier_name']})?",
+        f"🗑 Удалить поставку <b>#{delivery_id}</b> ({esc(dv['supplier_name'])})?",
         reply_markup=kb,
     )
     await callback.answer()

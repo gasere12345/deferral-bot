@@ -16,3 +16,5 @@ services:
         sync: false
       - key: REMINDER_DAYS
         value: "3"
+      - key: NOTIFICATION_CHAT_ID
+        sync: false

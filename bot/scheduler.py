@@ -1,10 +1,10 @@
 import logging
 
-from datetime import date
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import REMINDER_DAYS
+from bot.calendar_utils import today_minsk
 from bot.db import get_deliveries_for_date, get_overdue, get_upcoming
 from bot.reports import build_daily_text, build_weekly_text
 
@@ -14,7 +14,7 @@ TZ = "Europe/Minsk"
 
 
 async def daily_check(bot: Bot, chat_id: int):
-    today = date.today()
+    today = today_minsk()
     today_str = today.strftime("%Y-%m-%d")
     deliveries = await get_deliveries_for_date(today_str)
     overdue = await get_overdue(today_str)
@@ -24,7 +24,7 @@ async def daily_check(bot: Bot, chat_id: int):
 
 
 async def weekly_report(bot: Bot, chat_id: int):
-    today = date.today()
+    today = today_minsk()
     today_str = today.strftime("%Y-%m-%d")
     week_deliveries = await get_upcoming(today_str, 6)
     today_deliveries = await get_deliveries_for_date(today_str)

@@ -5,8 +5,8 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from bot.db import get_deliveries_for_date, get_unpaid_with_deferral_end, get_overdue, get_delivery, mark_paid
-from bot.calendar_utils import is_working_day, month_name, MONTH_NAMES
-from bot.reports import build_overdue_text
+from bot.calendar_utils import is_working_day, month_name, MONTH_NAMES, today_minsk
+from bot.reports import build_overdue_text, esc
 
 router = Router()
 
@@ -67,7 +67,7 @@ def _build_calendar(year: int, month: int, highlight_dates: set = None, overdue_
 
 @router.callback_query(F.data == "menu:calendar")
 async def show_calendar(callback: CallbackQuery):
-    today = date.today()
+    today = today_minsk()
     await _render_calendar(callback.message, today.year, today.month, edit=True)
     await callback.answer()
 
@@ -81,7 +81,7 @@ async def navigate_calendar(callback: CallbackQuery):
 
 @router.callback_query(lambda c: c.data == "cal:today")
 async def calendar_today(callback: CallbackQuery):
-    today = date.today()
+    today = today_minsk()
     await _render_calendar(callback.message, today.year, today.month, edit=True)
     await callback.answer()
 
@@ -94,7 +94,7 @@ async def show_overdue(callback: CallbackQuery, state: FSMContext):
 
 
 async def render_overdue_view(message: types.Message):
-    today = date.today()
+    today = today_minsk()
     overdue = await get_overdue(today.strftime("%Y-%m-%d"))
     text = build_overdue_text(overdue, today)
     buttons = []
@@ -138,7 +138,7 @@ async def show_day_deliveries(callback: CallbackQuery):
         for dv in deliveries:
             paid = "✅" if dv["paid"] else "⏳"
             total += dv["amount"] or 0
-            lines.append(f"{paid} <b>{dv['supplier_name']}</b> — {dv['amount']:,.0f} руб.")
+            lines.append(f"{paid} <b>{esc(dv['supplier_name'])}</b> — {dv['amount']:,.0f} руб.")
         lines.append(f"\n💰 Итого: {total:,.0f} руб.")
         text = "\n".join(lines)
 
@@ -147,7 +147,7 @@ async def show_day_deliveries(callback: CallbackQuery):
             if not dv["paid"]:
                 buttons.append([
                     InlineKeyboardButton(
-                        text=f"✅ Оплатить #{dv['id']} — {dv['supplier_name']}",
+                        text=f"✅ Оплатить #{dv['id']} — {esc(dv['supplier_name'])}",
                         callback_data=f"cal:pay:{dv['id']}:{year}:{month}",
                     )
                 ])
@@ -175,7 +175,7 @@ async def pay_from_calendar(callback: CallbackQuery):
 
 
 async def _render_calendar(message: types.Message, year: int, month: int, edit: bool = False):
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = today_minsk().strftime("%Y-%m-%d")
     unpaid = await get_unpaid_with_deferral_end()
     highlight = set()
     overdue = set()
