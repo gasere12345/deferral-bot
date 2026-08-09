@@ -6,9 +6,10 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from bot.config import TELEGRAM_TOKEN, PORT
+from bot.config import TELEGRAM_TOKEN, PORT, ALLOWED_IDS
 from bot.db import init as db_init
 from bot.handlers import common, suppliers, deliveries, calendar_view
+from bot.middleware import AccessMiddleware
 from bot.scheduler import setup_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,7 @@ _scheduler = None
 _health_runner = None
 
 dp = Dispatcher()
+dp.update.middleware(AccessMiddleware())
 dp.include_router(common.router)
 dp.include_router(suppliers.router)
 dp.include_router(deliveries.router)

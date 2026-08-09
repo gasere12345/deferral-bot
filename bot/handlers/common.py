@@ -12,6 +12,8 @@ def main_menu():
         [InlineKeyboardButton(text="📦 Поставки", callback_data="menu:deliveries")],
         [InlineKeyboardButton(text="📅 Календарь", callback_data="menu:calendar")],
         [InlineKeyboardButton(text="💰 Сегодня к оплате", callback_data="menu:today")],
+        [InlineKeyboardButton(text="⚠️ Просрочено", callback_data="menu:overdue")],
+        [InlineKeyboardButton(text="📤 Экспорт CSV", callback_data="menu:export")],
     ])
 
 

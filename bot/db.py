@@ -1,5 +1,5 @@
 import aiosqlite
-from datetime import date
+from datetime import date, timedelta
 from bot.calendar_utils import calc_deferral_end
 from bot.config import DATABASE_PATH
 
@@ -158,6 +158,11 @@ async def delete_delivery(delivery_id: int):
 
 
 async def get_deliveries_for_date(target_date: str):
+    all_unpaid = await get_unpaid_with_deferral_end()
+    return [d for d in all_unpaid if d["deferral_end"] == target_date]
+
+
+async def get_unpaid_with_deferral_end():
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -173,6 +178,43 @@ async def get_deliveries_for_date(target_date: str):
         deferral_end = calc_deferral_end(
             row["delivery_date"], row["deferral_days"], row["manual_end_date"]
         )
-        if deferral_end == target_date:
-            result.append(dict(row))
+        item = dict(row)
+        item["deferral_end"] = deferral_end
+        result.append(item)
+    return result
+
+
+async def get_overdue(target_date: str):
+    all_unpaid = await get_unpaid_with_deferral_end()
+    return [d for d in all_unpaid if d["deferral_end"] < target_date]
+
+
+async def get_upcoming(target_date: str, days: int):
+    all_unpaid = await get_unpaid_with_deferral_end()
+    limit = (date.fromisoformat(target_date) + timedelta(days=days)).strftime("%Y-%m-%d")
+    return [
+        d for d in all_unpaid
+        if target_date < d["deferral_end"] <= limit
+    ]
+
+
+async def get_all_deliveries_with_end():
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT d.id, d.supplier_id, d.delivery_date, d.amount, d.paid,
+                      d.manual_end_date, s.name AS supplier_name, s.deferral_days
+               FROM deliveries d
+               JOIN suppliers s ON d.supplier_id = s.id
+               ORDER BY d.delivery_date DESC""",
+        )
+        rows = await cursor.fetchall()
+    result = []
+    for row in rows:
+        deferral_end = calc_deferral_end(
+            row["delivery_date"], row["deferral_days"], row["manual_end_date"]
+        )
+        item = dict(row)
+        item["deferral_end"] = deferral_end
+        result.append(item)
     return result

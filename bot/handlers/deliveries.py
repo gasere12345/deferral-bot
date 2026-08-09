@@ -5,15 +5,18 @@ from aiogram import Router, types, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 
 from bot.db import (
     add_delivery, get_deliveries, get_delivery,
     mark_paid, edit_delivery, delete_delivery,
     get_all_suppliers, get_supplier,
     get_deliveries_for_date, set_manual_end_date,
+    get_all_deliveries_with_end,
 )
 from bot.calendar_utils import calc_deferral_end, month_name
+from bot.reports import build_export_csv
+from bot.handlers.calendar_view import render_overdue_view
 
 router = Router()
 
@@ -245,13 +248,21 @@ async def _show_list(message: types.Message, supplier_id: int):
 
     buttons = []
     for dv in deliveries:
+        row = []
         if not dv["paid"]:
-            buttons.append([
-                InlineKeyboardButton(
-                    text=f"✅ Оплатить #{dv['id']}",
-                    callback_data=f"delivery:pay:{dv['id']}:list:{supplier_id}",
-                )
-            ])
+            row.append(InlineKeyboardButton(
+                text=f"✅ Оплатить #{dv['id']}",
+                callback_data=f"delivery:pay:{dv['id']}:list:{supplier_id}",
+            ))
+        row.append(InlineKeyboardButton(
+            text=f"✏️ #{dv['id']}",
+            callback_data=f"delivery:edit_amount:{dv['id']}:{supplier_id}",
+        ))
+        row.append(InlineKeyboardButton(
+            text=f"🗑 #{dv['id']}",
+            callback_data=f"delivery:del:{dv['id']}:{supplier_id}",
+        ))
+        buttons.append(row)
     buttons.append([InlineKeyboardButton(text="➕ Добавить", callback_data=f"delivery:add:{supplier_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 К поставщику", callback_data=f"supplier:view:{supplier_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
@@ -297,6 +308,8 @@ async def pay_delivery_handler(callback: CallbackQuery):
     elif context == "reschedule":
         supplier_id = int(parts[4])
         await _show_reschedule_list(callback.message, supplier_id)
+    elif context == "overdue":
+        await render_overdue_view(callback.message)
     else:
         await callback.message.edit_text("✅ Готово!")
 
@@ -383,5 +396,77 @@ async def reschedule_date_pick(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="🔙 К поставщику", callback_data=f"supplier:view:{supplier_id}")],
             [InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")],
         ]),
+    )
+    await callback.answer()
+
+
+# ─── EDIT / DELETE DELIVERY ──────────────────────────────
+
+class EditDeliveryAmount(StatesGroup):
+    amount = State()
+
+
+@router.callback_query(F.data.startswith("delivery:edit_amount:"))
+async def edit_delivery_amount_start(callback: CallbackQuery, state: FSMContext):
+    _, _, delivery_id, supplier_id = callback.data.split(":")
+    await state.update_data(delivery_id=int(delivery_id), supplier_id=int(supplier_id))
+    await state.set_state(EditDeliveryAmount.amount)
+    dv = await get_delivery(int(delivery_id))
+    await callback.message.edit_text(
+        f"💰 Текущая сумма: {dv['amount']:,.0f} руб.\nВведите <b>новую сумму</b>:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Отмена", callback_data=f"delivery:list:{supplier_id}")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.message(EditDeliveryAmount.amount)
+async def edit_delivery_amount_save(message: types.Message, state: FSMContext):
+    try:
+        amount = float(message.text.strip().replace(",", "."))
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Введите положительное число (сумма в рублях):")
+        return
+    data = await state.get_data()
+    await edit_delivery(data["delivery_id"], amount=amount)
+    await state.clear()
+    await _show_list(message, data["supplier_id"])
+
+
+@router.callback_query(F.data.startswith("delivery:del:"))
+async def delete_delivery_confirm(callback: CallbackQuery):
+    _, _, delivery_id, supplier_id = callback.data.split(":")
+    dv = await get_delivery(int(delivery_id))
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"delivery:del_yes:{delivery_id}:{supplier_id}")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data=f"delivery:list:{supplier_id}")],
+    ])
+    await callback.message.edit_text(
+        f"🗑 Удалить поставку <b>#{delivery_id}</b> ({dv['supplier_name']})?",
+        reply_markup=kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("delivery:del_yes:"))
+async def delete_delivery_execute(callback: CallbackQuery):
+    _, _, delivery_id, supplier_id = callback.data.split(":")
+    await delete_delivery(int(delivery_id))
+    await callback.answer(f"🗑 Поставка #{delivery_id} удалена", show_alert=True)
+    await _show_list(callback.message, int(supplier_id))
+
+
+# ─── EXPORT ──────────────────────────────────────────────
+
+@router.callback_query(F.data == "menu:export")
+async def export_csv(callback: CallbackQuery):
+    deliveries = await get_all_deliveries_with_end()
+    data = build_export_csv(deliveries)
+    await callback.message.answer_document(
+        BufferedInputFile(data, filename="deliveries.csv"),
+        caption=f"📤 Выгрузка поставок: <b>{len(deliveries)}</b> шт.",
     )
     await callback.answer()

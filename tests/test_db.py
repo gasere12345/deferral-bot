@@ -255,3 +255,47 @@ class TestDeliveries:
 
         result2 = await get_deliveries_for_date("2026-07-31")
         assert result2 == []
+
+    async def test_unpaid_with_deferral_end(self, db):
+        from bot.db import add_supplier, add_delivery, mark_paid, get_unpaid_with_deferral_end
+
+        await add_supplier("A", 5)
+        await add_delivery(1, "2026-07-06", 100.0)
+        await add_delivery(1, "2026-07-08", 200.0)
+        await mark_paid(1)
+
+        unpaid = await get_unpaid_with_deferral_end()
+        assert len(unpaid) == 1
+        assert unpaid[0]["id"] == 2
+        assert unpaid[0]["deferral_end"] == "2026-07-13"
+
+    async def test_get_overdue(self, db):
+        from bot.db import add_supplier, add_delivery, get_overdue
+
+        await add_supplier("A", 5)
+        await add_delivery(1, "2026-07-06", 100.0)
+
+        assert len(await get_overdue("2026-07-11")) == 1
+        assert len(await get_overdue("2026-07-10")) == 0
+
+    async def test_get_upcoming(self, db):
+        from bot.db import add_supplier, add_delivery, get_upcoming
+
+        await add_supplier("A", 5)
+        await add_delivery(1, "2026-07-06", 100.0)
+
+        assert len(await get_upcoming("2026-07-06", 4)) == 1
+        assert len(await get_upcoming("2026-07-06", 3)) == 0
+        assert len(await get_upcoming("2026-07-10", 1)) == 0
+
+    async def test_get_all_deliveries_with_end(self, db):
+        from bot.db import add_supplier, add_delivery, mark_paid, get_all_deliveries_with_end
+
+        await add_supplier("A", 5)
+        await add_delivery(1, "2026-07-06", 100.0)
+        await add_delivery(1, "2026-07-08", 200.0)
+        await mark_paid(1)
+
+        all_dv = await get_all_deliveries_with_end()
+        assert len(all_dv) == 2
+        assert all("deferral_end" in d for d in all_dv)

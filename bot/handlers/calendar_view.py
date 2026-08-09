@@ -4,15 +4,18 @@ from aiogram import Router, types, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-from bot.db import get_deliveries_for_date, get_deliveries, get_delivery, mark_paid
-from bot.calendar_utils import calc_deferral_end, is_working_day, month_name, MONTH_NAMES
+from bot.db import get_deliveries_for_date, get_unpaid_with_deferral_end, get_overdue, get_delivery, mark_paid
+from bot.calendar_utils import is_working_day, month_name, MONTH_NAMES
+from bot.reports import build_overdue_text
 
 router = Router()
 
 
-def _build_calendar(year: int, month: int, highlight_dates: set = None):
+def _build_calendar(year: int, month: int, highlight_dates: set = None, overdue_dates: set = None):
     if highlight_dates is None:
         highlight_dates = set()
+    if overdue_dates is None:
+        overdue_dates = set()
     cal = calendar.monthcalendar(year, month)
 
     kb = []
@@ -29,7 +32,9 @@ def _build_calendar(year: int, month: int, highlight_dates: set = None):
                 d = date(year, month, day)
                 label = str(day)
                 key = d.strftime("%Y-%m-%d")
-                if key in highlight_dates:
+                if key in overdue_dates:
+                    label = f"🔴{day}"
+                elif key in highlight_dates:
                     label = f"💰{day}"
                 elif not is_working_day(d):
                     label = f"•{day}"
@@ -53,7 +58,10 @@ def _build_calendar(year: int, month: int, highlight_dates: set = None):
         InlineKeyboardButton(text="◀", callback_data=f"cal:nav:{prev_y}:{prev}"),
         InlineKeyboardButton(text="▶", callback_data=f"cal:nav:{next_y}:{next_m}"),
     ])
-    kb.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
+    kb.append([
+        InlineKeyboardButton(text="⚠️ Просрочено", callback_data="menu:overdue"),
+        InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -76,6 +84,31 @@ async def calendar_today(callback: CallbackQuery):
     today = date.today()
     await _render_calendar(callback.message, today.year, today.month, edit=True)
     await callback.answer()
+
+
+@router.callback_query(F.data == "menu:overdue")
+async def show_overdue(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await render_overdue_view(callback.message)
+    await callback.answer()
+
+
+async def render_overdue_view(message: types.Message):
+    today = date.today()
+    overdue = await get_overdue(today.strftime("%Y-%m-%d"))
+    text = build_overdue_text(overdue, today)
+    buttons = []
+    for ov in overdue:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"✅ Оплатить #{ov['id']} — {ov['supplier_name']}",
+                callback_data=f"delivery:pay:{ov['id']}:overdue",
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="📅 Календарь", callback_data="menu:calendar")])
+    buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.edit_text(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "cal:ignore")
@@ -142,13 +175,24 @@ async def pay_from_calendar(callback: CallbackQuery):
 
 
 async def _render_calendar(message: types.Message, year: int, month: int, edit: bool = False):
+    today_str = date.today().strftime("%Y-%m-%d")
+    unpaid = await get_unpaid_with_deferral_end()
     highlight = set()
-    for d in await _get_all_deferral_dates():
-        if d.startswith(f"{year}-{month:02d}"):
-            highlight.add(d)
+    overdue = set()
+    prefix = f"{year}-{month:02d}"
+    for d in unpaid:
+        end = d["deferral_end"]
+        if end.startswith(prefix):
+            if end < today_str:
+                overdue.add(end)
+            else:
+                highlight.add(end)
 
-    kb = _build_calendar(year, month, highlight)
-    header = f"📅 <b>{MONTH_NAMES[month]} {year}</b>\n💰 — есть платеж  • — выходной/праздник"
+    kb = _build_calendar(year, month, highlight, overdue)
+    header = (
+        f"📅 <b>{MONTH_NAMES[month]} {year}</b>\n"
+        f"💰 — есть платеж  🔴 — просрочено  • — выходной/праздник"
+    )
 
     if edit:
         try:
@@ -158,12 +202,3 @@ async def _render_calendar(message: types.Message, year: int, month: int, edit: 
                 raise
     else:
         await message.answer(header, reply_markup=kb)
-
-
-async def _get_all_deferral_dates() -> set:
-    all_deliveries = await get_deliveries(unpaid_only=True)
-    dates = set()
-    for d in all_deliveries:
-        end = calc_deferral_end(d["delivery_date"], d["deferral_days"], d["manual_end_date"])
-        dates.add(end)
-    return dates
