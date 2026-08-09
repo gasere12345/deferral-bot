@@ -211,10 +211,10 @@ async def delete_supplier_confirm(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("supplier:delete_yes:"))
-async def delete_supplier_execute(callback: CallbackQuery):
+async def delete_supplier_execute(callback: CallbackQuery, state: FSMContext):
     supplier_id = int(callback.data.split(":")[2])
     s = await get_supplier(supplier_id)
     name = s["name"]
     await delete_supplier(supplier_id)
     await callback.answer(f"🗑 «{name}» удалён", show_alert=True)
-    await show_suppliers_menu(callback)
+    await show_suppliers_menu(callback, state)
