@@ -18,3 +18,7 @@ services:
         value: "3"
       - key: NOTIFICATION_CHAT_ID
         sync: false
+      - key: TURSO_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
