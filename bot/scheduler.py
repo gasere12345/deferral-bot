@@ -47,8 +47,9 @@ def setup_scheduler(bot: Bot, chat_id: int) -> AsyncIOScheduler:
     scheduler.add_job(
         daily_check,
         "cron",
-        hour=8,
+        hour=9,
         minute=0,
+        timezone="Europe/Minsk",
         args=[bot, chat_id],
         id="daily_payment_check",
         replace_existing=True,

@@ -69,7 +69,12 @@ async def show_calendar(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("cal:nav:"))
 async def navigate_calendar(callback: CallbackQuery):
     _, _, year, month = callback.data.split(":")
-    await _render_calendar(callback.message, int(year), int(month), edit=True)
+    year, month = int(year), int(month)
+    today = date.today()
+    if (year, month) == (today.year, today.month):
+        await callback.answer("📅 Это уже текущий месяц")
+        return
+    await _render_calendar(callback.message, year, month, edit=True)
     await callback.answer()
 
 
