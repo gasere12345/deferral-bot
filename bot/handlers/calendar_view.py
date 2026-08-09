@@ -14,7 +14,6 @@ def _build_calendar(year: int, month: int, highlight_dates: set = None):
     if highlight_dates is None:
         highlight_dates = set()
     cal = calendar.monthcalendar(year, month)
-    today = date.today()
 
     kb = []
     kb.append([InlineKeyboardButton(text=f"{MONTH_NAMES[month]} {year}", callback_data="cal:ignore")])
@@ -52,7 +51,6 @@ def _build_calendar(year: int, month: int, highlight_dates: set = None):
         next_y += 1
     kb.append([
         InlineKeyboardButton(text="◀", callback_data=f"cal:nav:{prev_y}:{prev}"),
-        InlineKeyboardButton(text="Сегодня", callback_data=f"cal:nav:{today.year}:{today.month}"),
         InlineKeyboardButton(text="▶", callback_data=f"cal:nav:{next_y}:{next_m}"),
     ])
     kb.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu:main")])
@@ -69,12 +67,7 @@ async def show_calendar(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("cal:nav:"))
 async def navigate_calendar(callback: CallbackQuery):
     _, _, year, month = callback.data.split(":")
-    year, month = int(year), int(month)
-    today = date.today()
-    if (year, month) == (today.year, today.month):
-        await callback.answer("📅 Это уже текущий месяц")
-        return
-    await _render_calendar(callback.message, year, month, edit=True)
+    await _render_calendar(callback.message, int(year), int(month), edit=True)
     await callback.answer()
 
 
