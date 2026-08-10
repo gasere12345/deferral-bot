@@ -14,5 +14,6 @@ ALLOWED_IDS = {int(x) for x in _ALLOWED_RAW.split(",") if x.strip().isdigit()}
 if _ALLOWED_RAW and not ALLOWED_IDS:
     logger.warning("ALLOWED_IDS set but parsed to nothing — bot is OPEN to everyone!")
 REMINDER_DAYS = int(os.getenv("REMINDER_DAYS", "3"))
+NOTIFICATION_CHAT_IDS = {int(x) for x in os.getenv("NOTIFICATION_CHAT_ID", "").split(",") if x.strip().isdigit()}
 TURSO_URL = os.getenv("TURSO_URL")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")

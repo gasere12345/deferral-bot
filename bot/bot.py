@@ -1,12 +1,11 @@
 import asyncio
 import logging
-import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from bot.config import TELEGRAM_TOKEN, PORT, ALLOWED_IDS
+from bot.config import TELEGRAM_TOKEN, PORT, ALLOWED_IDS, NOTIFICATION_CHAT_IDS
 from bot.db import init as db_init
 from bot.handlers import common, suppliers, deliveries, calendar_view
 from bot.middleware import AccessMiddleware
@@ -15,11 +14,9 @@ from bot.scheduler import setup_scheduler
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-CHAT_ID_ENV = "NOTIFICATION_CHAT_ID"
 _scheduler = None
 _health_runner = None
 _health_task = None
-
 dp = Dispatcher()
 dp.update.middleware(AccessMiddleware())
 dp.include_router(common.router)
@@ -70,12 +67,12 @@ async def main():
 
     dp.shutdown.register(shutdown_scheduler)
 
-    chat_id = os.getenv(CHAT_ID_ENV)
-    if chat_id:
+    chat_ids = sorted(NOTIFICATION_CHAT_IDS)
+    if chat_ids:
         try:
-            _scheduler = setup_scheduler(bot, int(chat_id))
+            _scheduler = setup_scheduler(bot, chat_ids)
             _scheduler.start()
-            logger.info(f"Daily notifications scheduled for chat {chat_id}")
+            logger.info(f"Daily notifications scheduled for chats {chat_ids}")
         except Exception as e:
             logger.warning(f"Could not start scheduler: {e}")
     else:
