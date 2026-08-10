@@ -3,6 +3,6 @@ aiosqlite>=0.20
 python-dotenv>=1.0
 apscheduler>=3.10,<4
 aiohttp>=3.9
-libsql-client>=0.14
+libsql>=0.1.11
 pytest>=8.0
 pytest-asyncio>=0.24

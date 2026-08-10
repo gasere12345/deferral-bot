@@ -334,54 +334,29 @@ class TestDeliveries:
 
 
 class TestTursoBackend:
-    class _FakeRow:
-        def __init__(self, d):
-            self._d = d
-
-        def asdict(self):
-            return self._d
-
-    class _FakeResult:
-        def __init__(self, rows=None, lastrowid=None):
-            self.rows = rows or []
-            self.last_insert_rowid = lastrowid
-
-    class _FakeClient:
-        def __init__(self, result):
-            self.result = result
-            self.calls = []
-
-        async def execute(self, stmt, args=None):
-            self.calls.append((stmt, args))
-            if isinstance(self.result, Exception):
-                raise self.result
-            return self.result
-
-    def _make_backend(self, result):
+    async def _backend(self, tmp_path):
+        import bot.db as db_module
         from bot.db import _TursoBackend
 
-        backend = _TursoBackend("libsql://test", "token")
-        backend._client = self._FakeClient(result)
+        backend = _TursoBackend(str(tmp_path / "turso.db"), "ignored")
+        await backend.init()
         return backend
 
-    async def test_fetch_all_converts_to_dicts(self):
-        backend = self._make_backend(
-            self._FakeResult([self._FakeRow({"id": 1, "name": "A"})])
+    async def test_full_crud_via_libsql_file(self, tmp_path):
+        backend = await self._backend(tmp_path)
+        assert await backend.execute_bool(
+            "INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Sup", 30]
         )
-        rows = await backend.fetch_all("SELECT ...", [])
-        assert rows == [{"id": 1, "name": "A"}]
+        rows = await backend.fetch_all("SELECT id, name, deferral_days FROM suppliers")
+        assert rows == [{"id": 1, "name": "Sup", "deferral_days": 30}]
 
-    async def test_fetch_one_none(self):
-        backend = self._make_backend(self._FakeResult([]))
-        assert await backend.fetch_one("SELECT ...", []) is None
+        rowid = await backend.execute_insert(
+            "INSERT INTO deliveries (supplier_id, delivery_date, amount) VALUES (?, ?, ?)",
+            [1, "2026-07-06", 100.0],
+        )
+        assert rowid == 1
+        one = await backend.fetch_one("SELECT amount FROM deliveries WHERE id = ?", [1])
+        assert one == {"amount": 100.0}
 
-    async def test_execute_insert_rowid(self):
-        backend = self._make_backend(self._FakeResult(lastrowid=42))
-        assert await backend.execute_insert("INSERT ...", []) == 42
-
-    async def test_execute_bool_ok_and_error(self):
-        ok_backend = self._make_backend(self._FakeResult())
-        assert await ok_backend.execute_bool("INSERT ...", []) is True
-
-        err_backend = self._make_backend(RuntimeError("boom"))
-        assert await err_backend.execute_bool("INSERT ...", []) is False
+        assert await backend.fetch_one("SELECT 1 WHERE 1 = 0") is None
+        assert await backend.execute_bool("INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Sup", 30]) is False

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
@@ -85,41 +86,53 @@ class _TursoBackend:
     def __init__(self, url, token):
         self.url = url
         self.token = token
-        self._client = None
+        self._conn = None
+        self._lock = None
 
-    async def _get_client(self):
-        if self._client is None:
-            from libsql_client import create_client
-            self._client = create_client(url=self.url, auth_token=self.token)
-        return self._client
+    async def _get_conn(self):
+        if self._conn is None:
+            import libsql
+            self._lock = asyncio.Lock()
+            self._conn = libsql.connect(self.url, auth_token=self.token)
+        return self._conn
 
     @staticmethod
-    def _rows(results):
-        if results is None:
-            return []
-        return [row.asdict() for row in results.rows]
+    def _to_dicts(cursor):
+        cols = [c[0] for c in (cursor.description or [])]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
     async def init(self):
-        client = await self._get_client()
-        await client.execute(_CREATE_SUPPLIERS)
-        await client.execute(_CREATE_DELIVERIES)
+        await self.execute(_CREATE_SUPPLIERS)
+        await self.execute(_CREATE_DELIVERIES)
 
     async def fetch_all(self, sql, params=None):
-        client = await self._get_client()
-        return self._rows(await client.execute(sql, params))
+        conn = await self._get_conn()
+        async with self._lock:
+            def _run():
+                cursor = conn.execute(sql, params or [])
+                return self._to_dicts(cursor)
+            return await asyncio.to_thread(_run)
 
     async def fetch_one(self, sql, params=None):
         rows = await self.fetch_all(sql, params)
         return rows[0] if rows else None
 
     async def execute(self, sql, params=None):
-        client = await self._get_client()
-        await client.execute(sql, params)
+        conn = await self._get_conn()
+        async with self._lock:
+            def _run():
+                conn.execute(sql, params or [])
+                conn.commit()
+            await asyncio.to_thread(_run)
 
     async def execute_insert(self, sql, params=None):
-        client = await self._get_client()
-        res = await client.execute(sql, params)
-        return res.last_insert_rowid if res is not None else None
+        conn = await self._get_conn()
+        async with self._lock:
+            def _run():
+                cursor = conn.execute(sql, params or [])
+                conn.commit()
+                return cursor.lastrowid
+            return await asyncio.to_thread(_run)
 
     async def execute_bool(self, sql, params=None):
         try:
