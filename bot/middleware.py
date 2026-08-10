@@ -19,11 +19,10 @@ class AccessMiddleware(BaseMiddleware):
             return await handler(event, data)
         logger.info("Blocked access from user=%s chat=%s", user_id, chat_id)
         try:
-            if hasattr(event, "answer") and callable(event.answer):
-                if type(event).__name__ == "CallbackQuery":
-                    await event.answer("⛔ Доступ запрещён.", show_alert=True)
-                else:
-                    await event.answer("⛔ Доступ запрещён.")
-        except Exception:
-            pass
+            if type(event).__name__ == "CallbackQuery":
+                await event.answer("⛔ Доступ запрещён.", show_alert=True)
+            elif hasattr(event, "answer"):
+                await event.answer("⛔ Доступ запрещён.")
+        except Exception as e:
+            logger.warning("Could not notify blocked user=%s: %s", user_id, e)
         return
