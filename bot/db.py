@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
@@ -6,6 +8,15 @@ import aiosqlite
 
 from bot.config import DATABASE_PATH, TURSO_URL, TURSO_AUTH_TOKEN
 from bot.calendar_utils import calc_deferral_end
+
+logger = logging.getLogger(__name__)
+
+
+def _is_constraint_error(exc: Exception) -> bool:
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    msg = str(exc).lower()
+    return "constraint" in msg or "unique" in msg
 
 _CREATE_SUPPLIERS = """
 CREATE TABLE IF NOT EXISTS suppliers (
@@ -78,8 +89,16 @@ class _LocalBackend:
         try:
             await self.execute(sql, params)
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            if _is_constraint_error(e):
+                return False
+            raise
+
+    async def execute_many(self, queries):
+        async with self._conn() as db:
+            for sql, params in queries:
+                await db.execute(sql, params or [])
+            await db.commit()
 
 
 class _TursoBackend:
@@ -92,8 +111,17 @@ class _TursoBackend:
     async def _get_conn(self):
         if self._conn is None:
             import libsql
+
             self._lock = asyncio.Lock()
-            self._conn = libsql.connect(self.url, auth_token=self.token)
+
+            def _connect():
+                return libsql.connect(self.url, auth_token=self.token)
+
+            try:
+                self._conn = await asyncio.to_thread(_connect)
+            except Exception:
+                self._conn = None
+                raise
         return self._conn
 
     @staticmethod
@@ -101,45 +129,61 @@ class _TursoBackend:
         cols = [c[0] for c in (cursor.description or [])]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
+    async def _call(self, fn):
+        conn = await self._get_conn()
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(fn, conn)
+            except Exception:
+                self._conn = None
+                raise
+
     async def init(self):
         await self.execute(_CREATE_SUPPLIERS)
         await self.execute(_CREATE_DELIVERIES)
 
     async def fetch_all(self, sql, params=None):
-        conn = await self._get_conn()
-        async with self._lock:
-            def _run():
-                cursor = conn.execute(sql, params or [])
-                return self._to_dicts(cursor)
-            return await asyncio.to_thread(_run)
+        def _run(conn):
+            cursor = conn.execute(sql, params or [])
+            return self._to_dicts(cursor)
+
+        return await self._call(_run)
 
     async def fetch_one(self, sql, params=None):
         rows = await self.fetch_all(sql, params)
         return rows[0] if rows else None
 
     async def execute(self, sql, params=None):
-        conn = await self._get_conn()
-        async with self._lock:
-            def _run():
-                conn.execute(sql, params or [])
-                conn.commit()
-            await asyncio.to_thread(_run)
+        def _run(conn):
+            conn.execute(sql, params or [])
+            conn.commit()
+
+        await self._call(_run)
 
     async def execute_insert(self, sql, params=None):
-        conn = await self._get_conn()
-        async with self._lock:
-            def _run():
-                cursor = conn.execute(sql, params or [])
-                conn.commit()
-                return cursor.lastrowid
-            return await asyncio.to_thread(_run)
+        def _run(conn):
+            cursor = conn.execute(sql, params or [])
+            conn.commit()
+            return cursor.lastrowid
+
+        return await self._call(_run)
+
+    async def execute_many(self, queries):
+        def _run(conn):
+            for sql, params in queries:
+                conn.execute(sql, params or [])
+            conn.commit()
+
+        await self._call(_run)
 
     async def execute_bool(self, sql, params=None):
         try:
             await self.execute(sql, params)
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            if _is_constraint_error(e):
+                return False
+            raise
 
 
 _backend = None
@@ -148,9 +192,20 @@ _backend = None
 def _get_backend():
     global _backend
     if _backend is None:
+        if bool(TURSO_URL) != bool(TURSO_AUTH_TOKEN):
+            raise RuntimeError(
+                "Both TURSO_URL and TURSO_AUTH_TOKEN must be set together, "
+                "otherwise the bot would silently fall back to local storage"
+            )
         if TURSO_URL and TURSO_AUTH_TOKEN:
+            logger.info("Using Turso backend: %s", TURSO_URL)
             _backend = _TursoBackend(TURSO_URL, TURSO_AUTH_TOKEN)
         else:
+            logger.warning(
+                "Turso not configured — using LOCAL sqlite at %s "
+                "(data is lost on every redeploy!)",
+                DATABASE_PATH,
+            )
             _backend = _LocalBackend(DATABASE_PATH)
     return _backend
 
@@ -191,8 +246,10 @@ async def edit_supplier(supplier_id: int, name: str = None, deferral_days: int =
 
 async def delete_supplier(supplier_id: int):
     backend = _get_backend()
-    await backend.execute("DELETE FROM deliveries WHERE supplier_id = ?", [supplier_id])
-    await backend.execute("DELETE FROM suppliers WHERE id = ?", [supplier_id])
+    await backend.execute_many([
+        ("DELETE FROM deliveries WHERE supplier_id = ?", [supplier_id]),
+        ("DELETE FROM suppliers WHERE id = ?", [supplier_id]),
+    ])
 
 
 async def add_delivery(supplier_id: int, delivery_date: str, amount: float):

@@ -18,4 +18,12 @@ class AccessMiddleware(BaseMiddleware):
         if user_id in ALLOWED_IDS or chat_id in ALLOWED_IDS:
             return await handler(event, data)
         logger.info("Blocked access from user=%s chat=%s", user_id, chat_id)
+        try:
+            if hasattr(event, "answer") and callable(event.answer):
+                if type(event).__name__ == "CallbackQuery":
+                    await event.answer("⛔ Доступ запрещён.", show_alert=True)
+                else:
+                    await event.answer("⛔ Доступ запрещён.")
+        except Exception:
+            pass
         return

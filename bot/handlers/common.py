@@ -18,7 +18,8 @@ def main_menu():
 
 
 @router.message(Command("start"))
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     await message.answer(
         "👋 Добро пожаловать в <b>Deferral Bot</b>\n\n"
         "Я помогу отслеживать отсрочки платежей поставщикам.\n"

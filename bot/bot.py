@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 CHAT_ID_ENV = "NOTIFICATION_CHAT_ID"
 _scheduler = None
 _health_runner = None
+_health_task = None
 
 dp = Dispatcher()
 dp.update.middleware(AccessMiddleware())
@@ -44,7 +45,9 @@ async def health_check():
 
 
 async def shutdown_scheduler():
-    global _scheduler, _health_runner
+    global _scheduler, _health_runner, _health_task
+    if _health_task:
+        _health_task.cancel()
     if _scheduler:
         _scheduler.shutdown(wait=False)
         logger.info("Scheduler shut down")
@@ -54,7 +57,7 @@ async def shutdown_scheduler():
 
 
 async def main():
-    global _scheduler
+    global _scheduler, _health_task
 
     if not TELEGRAM_TOKEN:
         logger.error("TELEGRAM_TOKEN not set!")
@@ -79,7 +82,16 @@ async def main():
         logger.info("NOTIFICATION_CHAT_ID not set — daily notifications disabled")
 
     try:
-        asyncio.create_task(health_check())
+        _health_task = asyncio.create_task(health_check())
+
+        def _on_health_done(t):
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc:
+                logger.exception("Health check task failed: %s", exc)
+
+        _health_task.add_done_callback(_on_health_done)
     except Exception as e:
         logger.warning(f"Could not start health check server: {e}")
 

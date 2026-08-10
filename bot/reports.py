@@ -124,8 +124,8 @@ def build_overdue_text(overdue, today: date) -> str:
 
 
 def _csv_safe(value) -> str:
-    s = str(value or "")
-    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+    s = str(value or "").lstrip("\t\r ")
+    if s and s[0] in ("=", "+", "-", "@"):
         return "'" + s
     return s
 

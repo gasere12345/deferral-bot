@@ -316,21 +316,33 @@ class TestDeliveries:
         rows = await get_deliveries(supplier_id=1, unpaid_only=True)
         assert rows[0]["manual_end_date"] is None
 
-    async def test_backend_selection(self):
+    async def test_backend_selection(self, monkeypatch):
         import bot.db as db_module
 
-        db_module._backend = None
-        db_module.TURSO_URL = None
-        db_module.TURSO_AUTH_TOKEN = None
+        monkeypatch.setattr(db_module, "_backend", None)
+        monkeypatch.setattr(db_module, "TURSO_URL", None)
+        monkeypatch.setattr(db_module, "TURSO_AUTH_TOKEN", None)
         assert isinstance(db_module._get_backend(), db_module._LocalBackend)
 
-        db_module._backend = None
-        db_module.TURSO_URL = "libsql://test.turso.io"
-        db_module.TURSO_AUTH_TOKEN = "secret"
+        monkeypatch.setattr(db_module, "_backend", None)
+        monkeypatch.setattr(db_module, "TURSO_URL", "libsql://test.turso.io")
+        monkeypatch.setattr(db_module, "TURSO_AUTH_TOKEN", "secret")
         assert isinstance(db_module._get_backend(), db_module._TursoBackend)
-        db_module._backend = None
-        db_module.TURSO_URL = None
-        db_module.TURSO_AUTH_TOKEN = None
+
+    async def test_partial_turso_config_raises(self, monkeypatch):
+        import bot.db as db_module
+        import pytest as _pytest
+
+        monkeypatch.setattr(db_module, "_backend", None)
+        monkeypatch.setattr(db_module, "TURSO_URL", "libsql://test.turso.io")
+        monkeypatch.setattr(db_module, "TURSO_AUTH_TOKEN", None)
+        with _pytest.raises(RuntimeError):
+            db_module._get_backend()
+
+        monkeypatch.setattr(db_module, "TURSO_URL", None)
+        monkeypatch.setattr(db_module, "TURSO_AUTH_TOKEN", "secret")
+        with _pytest.raises(RuntimeError):
+            db_module._get_backend()
 
 
 class TestTursoBackend:
@@ -360,3 +372,25 @@ class TestTursoBackend:
 
         assert await backend.fetch_one("SELECT 1 WHERE 1 = 0") is None
         assert await backend.execute_bool("INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Sup", 30]) is False
+
+    async def test_execute_bool_constraint_vs_real_error(self, tmp_path):
+        backend = await self._backend(tmp_path)
+        import pytest as _pytest
+
+        assert await backend.execute_bool(
+            "INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Dup", 5]
+        ) is True
+        assert await backend.execute_bool(
+            "INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Dup", 5]
+        ) is False
+        with _pytest.raises(Exception):
+            await backend.execute_bool("INSERT INTO nope (x) VALUES (1)", [])
+
+    async def test_execute_many_single_commit(self, tmp_path):
+        backend = await self._backend(tmp_path)
+        await backend.execute_many([
+            ("INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["M", 10]),
+            ("INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["N", 15]),
+        ])
+        rows = await backend.fetch_all("SELECT name FROM suppliers ORDER BY name")
+        assert [r["name"] for r in rows] == ["M", "N"]

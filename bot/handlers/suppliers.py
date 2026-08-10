@@ -43,7 +43,7 @@ def supplier_detail_keyboard(supplier_id: int):
 
 
 @router.callback_query(F.data == "menu:suppliers")
-async def show_suppliers_menu(callback: CallbackQuery, state: FSMContext):
+async def show_suppliers_menu(callback: CallbackQuery, state: FSMContext, answer: bool = True):
     await state.clear()
     suppliers = await get_all_suppliers()
     if not suppliers:
@@ -56,7 +56,8 @@ async def show_suppliers_menu(callback: CallbackQuery, state: FSMContext):
         text = "📋 <b>Поставщики</b> — выбери из списка:"
         kb = suppliers_list_keyboard(suppliers)
     await callback.message.edit_text(text, reply_markup=kb)
-    await callback.answer()
+    if answer:
+        await callback.answer()
 
 
 @router.callback_query(F.data == "supplier:list")
@@ -82,6 +83,9 @@ async def add_supplier_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AddSupplier.name)
 async def add_supplier_name(message: types.Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Введите название текстовым сообщением:")
+        return
     name = message.text.strip()
     if len(name) < 2:
         await message.answer("Название слишком короткое. Введите ещё раз:")
@@ -98,6 +102,9 @@ async def add_supplier_name(message: types.Message, state: FSMContext):
 
 @router.message(AddSupplier.days)
 async def add_supplier_days(message: types.Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Введите число текстовым сообщением:")
+        return
     try:
         days = int(message.text.strip())
         if days <= 0:
@@ -195,8 +202,13 @@ async def edit_supplier_value(message: types.Message, state: FSMContext):
             return
     try:
         await edit_supplier(supplier_id, **{field: value})
-    except Exception:
-        await message.answer("⚠️ Поставщик с таким названием уже существует!")
+    except Exception as e:
+        from bot.db import _is_constraint_error
+
+        if _is_constraint_error(e):
+            await message.answer("⚠️ Поставщик с таким названием уже существует!")
+        else:
+            await message.answer("❌ Ошибка базы данных. Попробуйте ещё раз.")
         return
     await state.clear()
     s = await get_supplier(supplier_id)
@@ -234,4 +246,4 @@ async def delete_supplier_execute(callback: CallbackQuery, state: FSMContext):
     name = s["name"]
     await delete_supplier(supplier_id)
     await callback.answer(f"🗑 «{name}» удалён", show_alert=True)
-    await show_suppliers_menu(callback, state)
+    await show_suppliers_menu(callback, state, answer=False)

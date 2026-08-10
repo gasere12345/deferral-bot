@@ -4,7 +4,7 @@ from aiogram import Router, types, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-from bot.db import get_deliveries_for_date, get_unpaid_with_deferral_end, get_overdue, get_delivery, mark_paid
+from bot.db import get_deliveries_for_date, get_unpaid_with_deferral_end, get_overdue, mark_paid
 from bot.calendar_utils import is_working_day, month_name, MONTH_NAMES, today_minsk
 from bot.reports import build_overdue_text, esc
 
@@ -66,7 +66,8 @@ def _build_calendar(year: int, month: int, highlight_dates: set = None, overdue_
 
 
 @router.callback_query(F.data == "menu:calendar")
-async def show_calendar(callback: CallbackQuery):
+async def show_calendar(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     today = today_minsk()
     await _render_calendar(callback.message, today.year, today.month, edit=True)
     await callback.answer()
@@ -138,7 +139,7 @@ async def show_day_deliveries(callback: CallbackQuery):
         for dv in deliveries:
             paid = "✅" if dv["paid"] else "⏳"
             total += dv["amount"] or 0
-            lines.append(f"{paid} <b>{esc(dv['supplier_name'])}</b> — {dv['amount']:,.0f} руб.")
+            lines.append(f"{paid} <b>{esc(dv['supplier_name'])}</b> — {(dv['amount'] or 0):,.0f} руб.")
         lines.append(f"\n💰 Итого: {total:,.0f} руб.")
         text = "\n".join(lines)
 
@@ -147,7 +148,7 @@ async def show_day_deliveries(callback: CallbackQuery):
             if not dv["paid"]:
                 buttons.append([
                     InlineKeyboardButton(
-                        text=f"✅ Оплатить #{dv['id']} — {esc(dv['supplier_name'])}",
+                        text=f"✅ Оплатить #{dv['id']} — {dv['supplier_name']}",
                         callback_data=f"cal:pay:{dv['id']}:{year}:{month}",
                     )
                 ])
@@ -169,7 +170,6 @@ async def pay_from_calendar(callback: CallbackQuery):
     year = parts[3]
     month = parts[4]
     await mark_paid(delivery_id)
-    dv = await get_delivery(delivery_id)
     await callback.answer(f"✅ Поставка #{delivery_id} оплачена!", show_alert=True)
     await _render_calendar(callback.message, int(year), int(month), edit=True)
 

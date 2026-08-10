@@ -90,7 +90,7 @@ async def _show_today_payments(callback: CallbackQuery):
         for dv in deliveries:
             total += dv["amount"] or 0
             lines.append(
-                f"• <b>{esc(dv['supplier_name'])}</b> — {dv['amount']:,.0f} руб.\n"
+                f"• <b>{esc(dv['supplier_name'])}</b> — {(dv['amount'] or 0):,.0f} руб.\n"
                 f"  (поставка {dv['delivery_date']})"
             )
         lines.append(f"\n💰 Итого к оплате: {total:,.0f} руб.")
@@ -101,7 +101,7 @@ async def _show_today_payments(callback: CallbackQuery):
         if not dv["paid"]:
             buttons.append([
                 InlineKeyboardButton(
-                    text=f"✅ Оплатить #{dv['id']} — {esc(dv['supplier_name'])}",
+                    text=f"✅ Оплатить #{dv['id']} — {dv['supplier_name']}",
                     callback_data=f"delivery:pay:{dv['id']}:today",
                 )
             ])
@@ -250,7 +250,7 @@ async def _show_list(message: types.Message, supplier_id: int, edit: bool = True
             end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
             lines.append(
                 f"\n{paid} <b>#{dv['id']}</b> от {dv['delivery_date']}\n"
-                f"   Сумма: {dv['amount']:,.0f} руб.\n"
+                f"   Сумма: {(dv['amount'] or 0):,.0f} руб.\n"
                 f"   Оплатить до: {end}"
             )
         text = "".join(lines)
@@ -351,7 +351,7 @@ async def _show_reschedule_list(message: types.Message, supplier_id: int):
     buttons = []
     for dv in deliveries:
         end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
-        label = f"#{dv['id']} — {dv['amount']:,.0f} руб. (сейчас {end})"
+        label = f"#{dv['id']} — {(dv['amount'] or 0):,.0f} руб. (сейчас {end})"
         buttons.append([InlineKeyboardButton(text=label, callback_data=f"rs:pick:{dv['id']}:{supplier_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")])
     await message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -398,7 +398,6 @@ async def reschedule_date_pick(callback: CallbackQuery, state: FSMContext):
     supplier_id = data["supplier_id"]
     await set_manual_end_date(delivery_id, new_date)
     await state.clear()
-    dv = await get_delivery(delivery_id)
     await callback.message.edit_text(
         f"✅ Дата оплаты поставки <b>#{delivery_id}</b> перенесена на <b>{new_date}</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -426,7 +425,7 @@ async def edit_delivery_amount_start(callback: CallbackQuery, state: FSMContext)
     await state.update_data(delivery_id=int(delivery_id), supplier_id=int(supplier_id))
     await state.set_state(EditDeliveryAmount.amount)
     await callback.message.edit_text(
-        f"💰 Текущая сумма: {dv['amount']:,.0f} руб.\nВведите <b>новую сумму</b>:",
+        f"💰 Текущая сумма: {(dv['amount'] or 0):,.0f} руб.\nВведите <b>новую сумму</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data=f"menu:deliveries")],
         ]),
@@ -483,7 +482,8 @@ async def delete_delivery_execute(callback: CallbackQuery):
 # ─── EXPORT ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "menu:export")
-async def export_csv(callback: CallbackQuery):
+async def export_csv(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     deliveries = await get_all_deliveries_with_end()
     data = build_export_csv(deliveries)
     await callback.message.answer_document(
