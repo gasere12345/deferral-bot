@@ -6,6 +6,7 @@ from bot.reports import (
     build_overdue_text,
     build_export_csv,
     format_overdue_line,
+    fmt_money,
     esc,
 )
 
@@ -114,3 +115,17 @@ class TestExportCsv:
         assert esc('ООО "Рога & Копыта"') == 'ООО "Рога &amp; Копыта"'
         assert esc("<b>x</b>") == "&lt;b&gt;x&lt;/b&gt;"
         assert esc("простой") == "простой"
+
+
+class TestFmtMoney:
+    def test_whole_rubles(self):
+        assert fmt_money(1500) == "1,500 руб."
+        assert fmt_money(1500.0) == "1,500 руб."
+
+    def test_kopecks_preserved(self):
+        assert fmt_money(999.99) == "999.99 руб."
+        assert fmt_money(1234.5) == "1,234.50 руб."
+
+    def test_none_and_zero(self):
+        assert fmt_money(None) == "0 руб."
+        assert fmt_money(0) == "0 руб."

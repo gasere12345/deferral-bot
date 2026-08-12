@@ -15,7 +15,7 @@ from bot.db import (
     get_all_deliveries_with_end,
 )
 from bot.calendar_utils import calc_deferral_end, month_name, today_minsk
-from bot.reports import build_export_csv, esc
+from bot.reports import build_export_csv, esc, fmt_money
 from bot.handlers.calendar_view import render_overdue_view
 
 router = Router()
@@ -90,10 +90,10 @@ async def _show_today_payments(callback: CallbackQuery):
         for dv in deliveries:
             total += dv["amount"] or 0
             lines.append(
-                f"• <b>{esc(dv['supplier_name'])}</b> — {(dv['amount'] or 0):,.0f} руб.\n"
+                f"• <b>{esc(dv['supplier_name'])}</b> — {fmt_money(dv['amount'])}\n"
                 f"  (поставка {dv['delivery_date']})"
             )
-        lines.append(f"\n💰 Итого к оплате: {total:,.0f} руб.")
+        lines.append(f"\n💰 Итого к оплате: {fmt_money(total)}")
         text = "\n".join(lines)
 
     buttons = []
@@ -218,7 +218,7 @@ async def add_delivery_amount(message: types.Message, state: FSMContext):
         f"✅ <b>Поставка добавлена!</b>\n\n"
         f"Поставщик: {esc(s['name'])}\n"
         f"Дата поставки: {d.day} {month_name(d.month)} {d.year}\n"
-        f"Сумма: {amount:,.0f} руб.\n"
+        f"Сумма: {fmt_money(amount)}\n"
         f"⏳ Последний день оплаты: <b>{deferral_end}</b>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -250,7 +250,7 @@ async def _show_list(message: types.Message, supplier_id: int, edit: bool = True
             end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
             lines.append(
                 f"\n{paid} <b>#{dv['id']}</b> от {dv['delivery_date']}\n"
-                f"   Сумма: {(dv['amount'] or 0):,.0f} руб.\n"
+                f"   Сумма: {fmt_money(dv['amount'])}\n"
                 f"   Оплатить до: {end}"
             )
         text = "".join(lines)
@@ -351,7 +351,7 @@ async def _show_reschedule_list(message: types.Message, supplier_id: int):
     buttons = []
     for dv in deliveries:
         end = calc_deferral_end(dv["delivery_date"], dv["deferral_days"], dv["manual_end_date"])
-        label = f"#{dv['id']} — {(dv['amount'] or 0):,.0f} руб. (сейчас {end})"
+        label = f"#{dv['id']} — {fmt_money(dv['amount'])} (сейчас {end})"
         buttons.append([InlineKeyboardButton(text=label, callback_data=f"rs:pick:{dv['id']}:{supplier_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"supplier:view:{supplier_id}")])
     await message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -425,7 +425,7 @@ async def edit_delivery_amount_start(callback: CallbackQuery, state: FSMContext)
     await state.update_data(delivery_id=int(delivery_id), supplier_id=int(supplier_id))
     await state.set_state(EditDeliveryAmount.amount)
     await callback.message.edit_text(
-        f"💰 Текущая сумма: {(dv['amount'] or 0):,.0f} руб.\nВведите <b>новую сумму</b>:",
+        f"💰 Текущая сумма: {fmt_money(dv['amount'])}\nВведите <b>новую сумму</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Отмена", callback_data=f"menu:deliveries")],
         ]),

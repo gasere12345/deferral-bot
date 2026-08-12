@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 
 from bot.db import get_deliveries_for_date, get_unpaid_with_deferral_end, get_overdue, mark_paid
 from bot.calendar_utils import is_working_day, month_name, MONTH_NAMES, today_minsk
-from bot.reports import build_overdue_text, esc
+from bot.reports import build_overdue_text, esc, fmt_money
 
 router = Router()
 
@@ -139,8 +139,8 @@ async def show_day_deliveries(callback: CallbackQuery):
         for dv in deliveries:
             paid = "✅" if dv["paid"] else "⏳"
             total += dv["amount"] or 0
-            lines.append(f"{paid} <b>{esc(dv['supplier_name'])}</b> — {(dv['amount'] or 0):,.0f} руб.")
-        lines.append(f"\n💰 Итого: {total:,.0f} руб.")
+            lines.append(f"{paid} <b>{esc(dv['supplier_name'])}</b> — {fmt_money(dv['amount'])}")
+        lines.append(f"\n💰 Итого: {fmt_money(total)}")
         text = "\n".join(lines)
 
         buttons = []

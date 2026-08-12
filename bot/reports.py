@@ -24,8 +24,13 @@ def _plural(n: int, one: str, few: str, many: str) -> str:
     return many
 
 
-def _money(amount) -> str:
-    return f"{amount:,.0f} руб." if amount else "0 руб."
+def fmt_money(amount) -> str:
+    if not amount:
+        return "0 руб."
+    amount = float(amount)
+    if amount == int(amount):
+        return f"{amount:,.0f} руб."
+    return f"{amount:,.2f} руб."
 
 
 def _end_short(end: str) -> str:
@@ -36,7 +41,7 @@ def _end_short(end: str) -> str:
 
 
 def format_payment_line(dv, with_date: bool = True) -> str:
-    line = f"• <b>{esc(dv['supplier_name'])}</b> — {_money(dv['amount'])}"
+    line = f"• <b>{esc(dv['supplier_name'])}</b> — {fmt_money(dv['amount'])}"
     if with_date and dv.get("deferral_end"):
         line += f" (до {_end_short(dv['deferral_end'])})"
     return line
@@ -45,7 +50,7 @@ def format_payment_line(dv, with_date: bool = True) -> str:
 def format_overdue_line(dv, today: str) -> str:
     days = (date.fromisoformat(today) - date.fromisoformat(dv["deferral_end"])).days
     overdue = _plural(days, "день", "дня", "дней")
-    return f"🔴 <b>{esc(dv['supplier_name'])}</b> — {_money(dv['amount'])} (просрочено {days} {overdue})"
+    return f"🔴 <b>{esc(dv['supplier_name'])}</b> — {fmt_money(dv['amount'])} (просрочено {days} {overdue})"
 
 
 def build_daily_text(deliveries, overdue, upcoming, remind_days: int, today: date) -> str:
@@ -58,7 +63,7 @@ def build_daily_text(deliveries, overdue, upcoming, remind_days: int, today: dat
         total = sum(ov["amount"] or 0 for ov in overdue)
         for ov in overdue:
             lines.append(format_overdue_line(ov, today.strftime("%Y-%m-%d")))
-        lines.append(f"💳 Итого просрочено: <b>{_money(total)}</b>")
+        lines.append(f"💳 Итого просрочено: <b>{fmt_money(total)}</b>")
         parts.append("\n".join(lines))
 
     if deliveries:
@@ -66,7 +71,7 @@ def build_daily_text(deliveries, overdue, upcoming, remind_days: int, today: dat
         total = sum(dv["amount"] or 0 for dv in deliveries)
         for dv in deliveries:
             lines.append(format_payment_line(dv, with_date=False))
-        lines.append(f"💳 Итого сегодня: <b>{_money(total)}</b>")
+        lines.append(f"💳 Итого сегодня: <b>{fmt_money(total)}</b>")
         parts.append("\n".join(lines))
     else:
         parts.append("\n🎉 На сегодня платежей нет.")
@@ -76,7 +81,7 @@ def build_daily_text(deliveries, overdue, upcoming, remind_days: int, today: dat
         total = sum(dv["amount"] or 0 for dv in upcoming)
         for dv in upcoming:
             lines.append(format_payment_line(dv, with_date=True))
-        lines.append(f"💳 Итого скоро: <b>{_money(total)}</b>")
+        lines.append(f"💳 Итого скоро: <b>{fmt_money(total)}</b>")
         parts.append("\n".join(lines))
 
     return "\n".join(parts)
@@ -91,7 +96,7 @@ def build_weekly_text(week_deliveries, overdue, today: date) -> str:
         total = sum(ov["amount"] or 0 for ov in overdue)
         for ov in overdue:
             lines.append(format_overdue_line(ov, today.strftime("%Y-%m-%d")))
-        lines.append(f"💳 Итого просрочено: <b>{_money(total)}</b>")
+        lines.append(f"💳 Итого просрочено: <b>{fmt_money(total)}</b>")
         parts.append("\n".join(lines))
     else:
         parts.append("\n✅ Просроченных нет.")
@@ -101,7 +106,7 @@ def build_weekly_text(week_deliveries, overdue, today: date) -> str:
         total = sum(dv["amount"] or 0 for dv in week_deliveries)
         for dv in week_deliveries:
             lines.append(format_payment_line(dv, with_date=True))
-        lines.append(f"💳 Итого на неделю: <b>{_money(total)}</b>")
+        lines.append(f"💳 Итого на неделю: <b>{fmt_money(total)}</b>")
         parts.append("\n".join(lines))
     else:
         parts.append("\n🎉 На неделю платежей нет.")
@@ -119,7 +124,7 @@ def build_overdue_text(overdue, today: date) -> str:
     total = sum(ov["amount"] or 0 for ov in overdue)
     for ov in overdue:
         lines.append(format_overdue_line(ov, today.strftime("%Y-%m-%d")))
-    lines.append(f"\n💳 Итого просрочено: <b>{_money(total)}</b>")
+    lines.append(f"\n💳 Итого просрочено: <b>{fmt_money(total)}</b>")
     return "\n".join(lines)
 
 
