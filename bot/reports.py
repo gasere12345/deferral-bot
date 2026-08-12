@@ -26,11 +26,11 @@ def _plural(n: int, one: str, few: str, many: str) -> str:
 
 def fmt_money(amount) -> str:
     if not amount:
-        return "0 руб."
+        return "0 BYN"
     amount = float(amount)
     if amount == int(amount):
-        return f"{amount:,.0f} руб."
-    return f"{amount:,.2f} руб."
+        return f"{amount:,.0f} BYN"
+    return f"{amount:,.2f} BYN"
 
 
 def _end_short(end: str) -> str:
@@ -138,7 +138,7 @@ def _csv_safe(value) -> str:
 def build_export_csv(deliveries) -> bytes:
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";")
-    writer.writerow(["ID", "Поставщик", "Дата поставки", "Сумма, руб", "Оплачено", "Оплатить до"])
+    writer.writerow(["ID", "Поставщик", "Дата поставки", "Сумма, BYN", "Оплачено", "Оплатить до"])
     for dv in deliveries:
         writer.writerow([
             dv["id"],

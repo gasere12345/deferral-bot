@@ -67,7 +67,7 @@ class TestOverdueText:
         assert "Просроченные платежи" in text
         assert "A" in text
         assert "просрочено 5 дней" in text
-        assert "Итого просрочено: <b>500 руб.</b>" in text
+        assert "Итого просрочено: <b>500 BYN</b>" in text
 
     def test_overdue_line_plural(self):
         assert "просрочено 1 день" in format_overdue_line(_dv(1, "A", 1, "2026-07-09"), "2026-07-10")
@@ -119,13 +119,13 @@ class TestExportCsv:
 
 class TestFmtMoney:
     def test_whole_rubles(self):
-        assert fmt_money(1500) == "1,500 руб."
-        assert fmt_money(1500.0) == "1,500 руб."
+        assert fmt_money(1500) == "1,500 BYN"
+        assert fmt_money(1500.0) == "1,500 BYN"
 
     def test_kopecks_preserved(self):
-        assert fmt_money(999.99) == "999.99 руб."
-        assert fmt_money(1234.5) == "1,234.50 руб."
+        assert fmt_money(999.99) == "999.99 BYN"
+        assert fmt_money(1234.5) == "1,234.50 BYN"
 
     def test_none_and_zero(self):
-        assert fmt_money(None) == "0 руб."
-        assert fmt_money(0) == "0 руб."
+        assert fmt_money(None) == "0 BYN"
+        assert fmt_money(0) == "0 BYN"
