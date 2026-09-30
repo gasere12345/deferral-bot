@@ -25,12 +25,19 @@ dp.include_router(deliveries.router)
 dp.include_router(calendar_view.router)
 
 
+async def _health_response(_request):
+    from aiohttp import web
+
+    return web.Response(text="OK")
+
+
 async def health_check():
     global _health_runner
     try:
         from aiohttp import web
         app = web.Application()
-        app.router.add_get("/health", lambda r: web.Response(text="OK"))
+        app.router.add_get("/health", _health_response)
+        app.router.add_get("/", _health_response)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", PORT)
@@ -39,6 +46,22 @@ async def health_check():
         logger.info(f"Health check server running on port {PORT}")
     except Exception as e:
         logger.exception("Health check server failed to start: %s", e)
+
+
+async def _init_db_with_retry(attempts: int = 5, delay: float = 5.0):
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            await db_init()
+            return
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Database init failed (attempt %d/%d): %s", attempt, attempts, e
+            )
+            if attempt < attempts:
+                await asyncio.sleep(delay)
+    raise RuntimeError(f"Database init failed after {attempts} attempts") from last_error
 
 
 async def shutdown_scheduler():
@@ -60,7 +83,7 @@ async def main():
         logger.error("TELEGRAM_TOKEN not set!")
         return
 
-    await db_init()
+    await _init_db_with_retry()
     logger.info("Database initialized")
 
     bot = Bot(token=TELEGRAM_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))

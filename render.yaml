@@ -10,8 +10,6 @@ services:
         sync: false
       - key: DATABASE_PATH
         value: bot/deferral.db
-      - key: PORT
-        value: "8080"
       - key: ALLOWED_IDS
         sync: false
       - key: REMINDER_DAYS
