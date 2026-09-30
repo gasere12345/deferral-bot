@@ -106,23 +106,20 @@ class _TursoBackend:
         self.url = url
         self.token = token
         self._conn = None
-        self._lock = None
+        self._lock = asyncio.Lock()
 
     async def _get_conn(self):
-        if self._conn is None:
-            import libsql
+        if self._conn is not None:
+            return self._conn
+        async with self._lock:
+            if self._conn is None:
+                import libsql
 
-            self._lock = asyncio.Lock()
+                def _connect():
+                    return libsql.connect(self.url, auth_token=self.token)
 
-            def _connect():
-                return libsql.connect(self.url, auth_token=self.token)
-
-            try:
                 self._conn = await asyncio.to_thread(_connect)
-            except Exception:
-                self._conn = None
-                raise
-        return self._conn
+            return self._conn
 
     @staticmethod
     def _to_dicts(cursor):
@@ -134,8 +131,9 @@ class _TursoBackend:
         async with self._lock:
             try:
                 return await asyncio.to_thread(fn, conn)
-            except Exception:
-                self._conn = None
+            except Exception as e:
+                if not _is_constraint_error(e):
+                    self._conn = None
                 raise
 
     async def init(self):

@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from bot.config import TELEGRAM_TOKEN, PORT, ALLOWED_IDS, NOTIFICATION_CHAT_IDS
+from bot.config import TELEGRAM_TOKEN, PORT, NOTIFICATION_CHAT_IDS
 from bot.db import init as db_init
 from bot.handlers import common, suppliers, deliveries, calendar_view
 from bot.middleware import AccessMiddleware
@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 _scheduler = None
 _health_runner = None
-_health_task = None
 dp = Dispatcher()
 dp.update.middleware(AccessMiddleware())
 dp.include_router(common.router)
@@ -33,19 +32,22 @@ async def _health_response(_request):
 
 async def health_check():
     global _health_runner
+    from aiohttp import web
+
+    app = web.Application()
+    app.router.add_get("/health", _health_response)
+    app.router.add_get("/", _health_response)
+    runner = web.AppRunner(app)
     try:
-        from aiohttp import web
-        app = web.Application()
-        app.router.add_get("/health", _health_response)
-        app.router.add_get("/", _health_response)
-        runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", PORT)
         await site.start()
-        _health_runner = runner
-        logger.info(f"Health check server running on port {PORT}")
-    except Exception as e:
-        logger.exception("Health check server failed to start: %s", e)
+    except Exception:
+        await runner.cleanup()
+        logger.exception("Health check server failed to start on port %s", PORT)
+        raise
+    _health_runner = runner
+    logger.info(f"Health check server running on port {PORT}")
 
 
 async def _init_db_with_retry(attempts: int = 5, delay: float = 5.0):
@@ -65,9 +67,6 @@ async def _init_db_with_retry(attempts: int = 5, delay: float = 5.0):
 
 
 async def shutdown_scheduler():
-    global _scheduler, _health_runner, _health_task
-    if _health_task:
-        _health_task.cancel()
     if _scheduler:
         _scheduler.shutdown(wait=False)
         logger.info("Scheduler shut down")
@@ -77,11 +76,12 @@ async def shutdown_scheduler():
 
 
 async def main():
-    global _scheduler, _health_task
+    global _scheduler
 
     if not TELEGRAM_TOKEN:
-        logger.error("TELEGRAM_TOKEN not set!")
-        return
+        raise RuntimeError("TELEGRAM_TOKEN not set")
+
+    await health_check()
 
     await _init_db_with_retry()
     logger.info("Database initialized")
@@ -100,20 +100,6 @@ async def main():
             logger.warning(f"Could not start scheduler: {e}")
     else:
         logger.info("NOTIFICATION_CHAT_ID not set — daily notifications disabled")
-
-    try:
-        _health_task = asyncio.create_task(health_check())
-
-        def _on_health_done(t):
-            if t.cancelled():
-                return
-            exc = t.exception()
-            if exc:
-                logger.exception("Health check task failed: %s", exc)
-
-        _health_task.add_done_callback(_on_health_done)
-    except Exception as e:
-        logger.warning(f"Could not start health check server: {e}")
 
     logger.info("Bot started polling")
     await dp.start_polling(bot, drop_pending_updates=True)

@@ -394,3 +394,59 @@ class TestTursoBackend:
         ])
         rows = await backend.fetch_all("SELECT name FROM suppliers ORDER BY name")
         assert [r["name"] for r in rows] == ["M", "N"]
+
+    async def test_concurrent_get_conn_opens_single_connection(self, monkeypatch, tmp_path):
+        import asyncio
+        import time
+        import libsql
+        from bot.db import _TursoBackend
+
+        backend = _TursoBackend(str(tmp_path / "turso.db"), "ignored")
+        opened = []
+        real_connect = libsql.connect
+
+        def slow_connect(*args, **kwargs):
+            time.sleep(0.05)
+            conn = real_connect(*args, **kwargs)
+            opened.append(conn)
+            return conn
+
+        monkeypatch.setattr(libsql, "connect", slow_connect)
+        conns = await asyncio.gather(*[backend._get_conn() for _ in range(5)])
+
+        assert len(opened) == 1
+        assert all(c is conns[0] for c in conns)
+
+    async def test_duplicate_insert_keeps_connection_alive(self, tmp_path):
+        backend = await self._backend(tmp_path)
+        conn_before = await backend._get_conn()
+
+        assert await backend.execute_bool(
+            "INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Dup", 5]
+        ) is True
+        assert await backend.execute_bool(
+            "INSERT INTO suppliers (name, deferral_days) VALUES (?, ?)", ["Dup", 5]
+        ) is False
+
+        assert await backend._get_conn() is conn_before
+
+    async def test_lock_is_not_recreated_on_reconnect(self, tmp_path):
+        import bot.db as db_module
+        from bot.db import _TursoBackend
+
+        backend = _TursoBackend(str(tmp_path / "turso.db"), "ignored")
+        await backend.init()
+        lock_before = backend._lock
+
+        def _boom(conn):
+            raise ConnectionError("network down")
+
+        import pytest as _pytest
+
+        with _pytest.raises(ConnectionError):
+            await backend._call(_boom)
+
+        assert backend._conn is None
+        assert backend._lock is lock_before
+        assert await backend.fetch_all("SELECT name FROM suppliers") == []
+
