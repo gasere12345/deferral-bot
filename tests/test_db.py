@@ -447,6 +447,6 @@ class TestTursoBackend:
             await backend._call(_boom)
 
         assert backend._conn is None
-        assert backend._lock is lock_before
         assert await backend.fetch_all("SELECT name FROM suppliers") == []
+        assert backend._lock is lock_before
 

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _scheduler = None
 _health_runner = None
+_ready = False
 dp = Dispatcher()
 dp.update.middleware(AccessMiddleware())
 dp.include_router(common.router)
@@ -27,6 +28,8 @@ dp.include_router(calendar_view.router)
 async def _health_response(_request):
     from aiohttp import web
 
+    if not _ready:
+        return web.Response(status=503, text="STARTING")
     return web.Response(text="OK")
 
 
@@ -76,7 +79,7 @@ async def shutdown_scheduler():
 
 
 async def main():
-    global _scheduler
+    global _scheduler, _ready
 
     if not TELEGRAM_TOKEN:
         raise RuntimeError("TELEGRAM_TOKEN not set")
@@ -84,6 +87,7 @@ async def main():
     await health_check()
 
     await _init_db_with_retry()
+    _ready = True
     logger.info("Database initialized")
 
     bot = Bot(token=TELEGRAM_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
